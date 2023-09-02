@@ -18,7 +18,7 @@ _log_cmdline() {
     local _cmd="$@"
     printf '%s' "${COLOUR:+${_YELLOW}}" >&2
     printf '%s [%s]\n' "$(date '+%b %d %T')" "CMD: $_cmd" >&2
-    printf '%s' "${COLOUR:+${_CYAN}}" >&2
+    printf '%s' "${COLOUR:+${_NORMAL}}" >&2
 }
 
 _log() {
@@ -34,47 +34,29 @@ _log() {
     local _cmd="$@"
     if [ -n "$DEBUG" ]
     then
-        printf '%s' "${COLOUR:+${_YELLOW}}" >&2
-        printf '%s [%s]\n' "$(date '+%b %d %T')" "CMD: $_cmd" >&2
+        _log_cmdline "$_cmd"
         printf '%s' "${COLOUR:+${_CYAN}}" >&2
         eval "$_cmd" 2>&1 | sed -e 's/^/     | /' >&2
-        local _status=$?
-        if [ $_status -eq 0 ]
-        then
-            printf '%s' "${COLOUR:+${_NORMAL}}" >&2
-        else
-            printf '%s[ERROR (%s)]%s\n' "${COLOUR:+${_RED}}" "$_status" "${COLOUR:+${_NORMAL}}" >&2
-        fi
-        return $_status
+        printf '%s' "${COLOUR:+${_NORMAL}}" >&2
+        return $?
     else 
         eval "$_cmd"
     fi 
 }
 
-_silent() {
-    # Run command silently (if DEBUG set just output command)
-    local _cmd="$@"
-    if [ -n "$DEBUG" ]
-    then
-        printf '%s' "${COLOUR:+${_YELLOW}}" >&2
-        printf '%s [%s]\n' "$(date '+%b %d %T')" "CMD: $_cmd" >&2
-        printf '%s' "${COLOUR:+${_NORMAL}}" >&2
-    fi
-    eval "$_cmd" >/dev/null 2>&1
-}
-
 _run() {
     # Run command directly (logs cmd if $DEBUG set)
     local _cmd="$@"
-    if [ -n "$DEBUG" ]
-    then
-        printf '%s' "${COLOUR:+${_YELLOW}}" >&2
-        printf '%s [%s]\n' "$(date '+%b %d %T')" "CMD: $_cmd" >&2
-        printf '%s' "${COLOUR:+${_NORMAL}}" >&2
-    fi
+    [ -n "$DEBUG" ] && _log_cmdline "$_cmd"
     eval "$_cmd"
 }
 
+_silent() {
+    # Run command silently (if DEBUG set just output command)
+    local _cmd="$@"
+    [ -n "$DEBUG" ] && _log_cmdline "$_cmd"
+    eval "$_cmd" >/dev/null 2>&1
+}
 
 _check() {
     # Run command optionally printing debug output if $DEBUG is set
@@ -82,10 +64,10 @@ _check() {
     local _cmd="$@"
     if [ -n "$DEBUG" ]
     then
-        printf '%s' "${COLOUR:+${_YELLOW}}" >&2
-        printf '%s [%s]\n' "$(date '+%b %d %T')" "CMD: $_cmd" >&2
+        _log_cmdline "$_cmd"
         printf '%s' "${COLOUR:+${_CYAN}}" >&2
         eval "$_cmd" 2>&1 | sed -e 's/^/     | /' >&2
+        printf '%s' "${COLOUR:+${_NORMAL}}" >&2
         local _status=$?
         if [ $_status -eq 0 ]
         then
@@ -205,13 +187,43 @@ update_base() {
         _fatal "Usage: update_base <base>"
     fi
     _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+
     # Copy local resolv.conf 
     _check /bin/cp /etc/resolv.conf \"${ZJAIL_BASE}/${_name}/etc/resolv.conf\"
+
+    # Set hostname
+    _check /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /bin/hostname \"${_name}\"
+ 
     # Run freebsd-update in chroot
-    _check PAGER=\\"/usr/bin/tail -n0\\" /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/freebsd-update --not-running-from-cron fetch
-    _check PAGER=/bin/cat /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/freebsd-update --not-running-from-cron install 
+    _check PAGER=\"/usr/bin/tail -n0\" /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/freebsd-update --not-running-from-cron fetch
+    _log /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/freebsd-update --not-running-from-cron updatesready
+    if [ $? -eq 0 ]
+    then
+        _check PAGER=/bin/cat /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/freebsd-update --not-running-from-cron install 
+    fi
 
+    # Update pkg (bootstrap if necessary)
+    _log /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/pkg -N
+    if [ $? -ne 0 ]
+    then
+        _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/pkg bootstrap
+    fi
+    _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/pkg update
+    _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/pkg upgrade
 
+    # Create snapshot
+    _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
+}
+
+chroot_base() {
+    local _name="${1:-}"
+    if [ -z "${_name}" ]
+    then
+        _fatal "Usage: chroot_base <base>"
+    fi
+    _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+    _run /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" env PS1=\"${_name} \> \" /bin/sh
+    _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
 }
 
 snapshot_base() {
