@@ -37,8 +37,9 @@ _log() {
         _log_cmdline "$_cmd"
         printf '%s' "${COLOUR:+${_CYAN}}" >&2
         eval "$_cmd" 2>&1 | sed -e 's/^/     | /' >&2
+        local _status=$?
         printf '%s' "${COLOUR:+${_NORMAL}}" >&2
-        return $?
+        return $_status
     else 
         eval "$_cmd"
     fi 
@@ -67,7 +68,6 @@ _check() {
         _log_cmdline "$_cmd"
         printf '%s' "${COLOUR:+${_CYAN}}" >&2
         eval "$_cmd" 2>&1 | sed -e 's/^/     | /' >&2
-        printf '%s' "${COLOUR:+${_NORMAL}}" >&2
         local _status=$?
         if [ $_status -eq 0 ]
         then
@@ -195,11 +195,15 @@ update_base() {
     _check /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /bin/hostname \"${_name}\"
  
     # Run freebsd-update in chroot
-    _check PAGER=\"/usr/bin/tail -n0\" /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/freebsd-update --not-running-from-cron fetch
-    _log /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/freebsd-update --not-running-from-cron updatesready
+    local _version=$(_run /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /bin/freebsd-version) || _fatal "Cant get freebsd-version"
+    _check PAGER=\"/usr/bin/tail -n0\" /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" \
+        /usr/sbin/freebsd-update --currently-running \"${_version}\" --not-running-from-cron fetch
+    _log /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" \
+        /usr/sbin/freebsd-update --not-running-from-cron updatesready
     if [ $? -eq 0 ]
     then
-        _check PAGER=/bin/cat /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/freebsd-update --not-running-from-cron install 
+        _check PAGER=/bin/cat /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" \
+            /usr/sbin/freebsd-update --not-running-from-cron install 
     fi
 
     # Update pkg (bootstrap if necessary)
@@ -221,9 +225,17 @@ chroot_base() {
     then
         _fatal "Usage: chroot_base <base>"
     fi
+
     _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
-    _run /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" env PS1=\"${_name} \> \" /bin/sh
-    _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
+
+    shift
+    if [ "$#" -gt 0 ]
+    then
+        _run /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" $@
+    else
+        _run /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" env PS1=\"${_name} \> \" /bin/sh
+        _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
+    fi
 }
 
 snapshot_base() {
@@ -263,3 +275,4 @@ if [ "${1:-}" = "cli" ]
 then
     cli
 fi
+
