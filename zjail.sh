@@ -142,6 +142,8 @@ ZJAIL_BASE="${ZJAIL}/base/${ARCH}"
 ZJAIL_RUN="${ZJAIL}/run/${ARCH}"
 DIST_SRC="${DIST_SRC:-http://ftp.freebsd.org/pub/FreeBSD/releases/}"
 
+### Setup environment
+
 create_zfs_datasets () {
     _silent /sbin/zfs list -H -o name \"${ZJAIL_ROOT_DATASET}\" && _fatal "Dataset ${ZJAIL_ROOT_DATASET} exists"
     _check /sbin/zfs create -o compression=lz4 -o mountpoint=\"${ZJAIL}\" -p \"${ZJAIL_ROOT_DATASET}\" 
@@ -149,6 +151,8 @@ create_zfs_datasets () {
     _check /sbin/zfs create -p \"${ZJAIL_BASE_DATASET}\" 
     _check /sbin/zfs create -p \"${ZJAIL_RUN_DATASET}\" 
 }
+
+### Releases
 
 fetch_release() {
     local _release="${1:-${OS_RELEASE}}"
@@ -165,6 +169,8 @@ fetch_release() {
         _check /usr/bin/fetch -o \"${ZJAIL_DIST}/${_release}/${_f}\" \"${DIST_SRC}/${ARCH}/${_release}/${_f}\"
     done
 }
+
+### Manage bases
 
 create_base() {
     local _name="${1:-${OS_RELEASE}}"
@@ -225,7 +231,6 @@ chroot_base() {
     then
         _fatal "Usage: chroot_base <base>"
     fi
-
     _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
 
     shift
@@ -234,9 +239,30 @@ chroot_base() {
         _run /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" $@
     else
         _run /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" env PS1=\"${_name} \> \" /bin/sh
-        _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
     fi
+    # _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
 }
+
+clone_base() {
+    local _name="${1:-}"
+    local _target="${2:-}"
+    if [ -z "${_name}" -o -z "${_target}" ]
+    then
+        _fatal "Usage: clone_base <base> <target>"
+    fi
+    _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+    _silent /bin/test -d \"${ZJAIL_BASE}/${_target}\" && _fatal "TARGET [${ZJAIL_BASE}/${_target}] exists"
+
+    local _latest=$(get_latest_snapshot "${_name}")
+    if [ -z "${_latest}" ]
+    then
+        _fatal "Cant find snapshot: ${ZJAIL_BASE}/${_name}"
+    fi
+
+    _check /sbin/zfs clone \"${_latest}\" \"${ZJAIL_BASE_DATASET}/${_target}\"
+    _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_target}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
+}
+
 
 snapshot_base() {
     local _name="${1:-}"
@@ -255,7 +281,62 @@ get_latest_snapshot() {
         _fatal "Usage: get_latest_snapshot <base>"
     fi
     _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
-    _run "zfs list -H -t snap -s creation -o name \"${ZJAIL_BASE_DATASET}/${_name}\" | tail -1"
+    _run "/sbin/zfs list -H -t snap -s creation -o name \"${ZJAIL_BASE_DATASET}/${_name}\" | tail -1"
+}
+
+### Instances
+
+# Generate random 64-bit ID as 13 character base32 encoded string
+gen_id() {
+    # Get 2 x 32 bit unsigned ints from /dev/urandom
+    # (od doesnt accept -t u8 so we multiply in bc)
+    set -- $(od -v -An -N8 -t u4 /dev/urandom)
+    # Reserve ::0 to ::ffff for system 
+    while [ ${1:-0} -eq 0 -a ${2:-0} -lt 65536 ]
+    do
+        set -- $(od -v -An -N8 -t u4 /dev/urandom)
+    done
+    # Use bc to generate pseudo-base32 encoded string from 64bit uint 
+    # (Note this isnt a normal base32 and just uses fixed 13 chars (13*5 = 65))
+    bc -l -e "x = $1 * $2" \
+          -e 'for (i=0;i<13;i++) { mod = band(x,31); x = bshr(x,5); if (mod < 10) { c[12-i] = mod + 48 } else { c[12-i] = mod + 65 - 10 } }' \
+          -e 'print asciify(c[]),"\n"' \
+          | sed -e '1s/ //g' -e '1s/\(....\)\(....\)\(....\)\(....\)/\1:\2:\3:\4/'
+}
+
+# Generate 64-bit IPv6 suffix from pseudo-base32 ID 
+get_ipv6_suffix() {
+    printf '%04x:%04x:%04x:%04x\n' $(
+        awk -v x="${1}" '
+            BEGIN { 
+                c = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
+                for (i=0;i<length(c);i++) {
+                    v[substr(c,i+1,1)] = i
+                }
+                for (i=0;i<13;i++) {
+                    print v[substr(x,i+1,1)]
+                }
+            }' </dev/null \
+        | bc -l -e  '
+            for (i=0;i<13;i++) { 
+                out = bshl(out,5) + read()
+            }
+            print bshr(out,48), " ", band(bshr(out,32),65535), " ", band(bshr(out,16),65535), " ", band(out,65535), "\n"
+        ') 
+}
+
+create_instance() {
+    local _base="${1:-}"
+    if [ -z "${_base}" ]
+    then
+        _fatal "Usage: create_instance <base> [params]"
+    fi
+
+    # Generate random 64-bit jail_id and IPv6 suffix 
+    local _jail_id="$(gen_id)"
+    local _jail_ipv6_suffix=$(get_ipv6_suffix "$_jail_id")
+
+    printf 'ID: %s\nSuffix: %s\n' $_jail_id $_jail_ipv6_suffix
 }
 
 cli() {
