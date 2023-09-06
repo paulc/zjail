@@ -123,6 +123,7 @@ trap _exitf EXIT
 # ${ZPOOL}/zjail/dist/<arch>/<os-release>
 # ${ZPOOL}/zjail/base/<arch>/<base>
 # ${ZPOOL}/zjail/run/<arch>/<image>>
+# ${ZPOOL}/zjail/config
 #
 
 ### Config
@@ -137,9 +138,12 @@ ZJAIL_ROOT_DATASET="${ZPOOL}/zjail"
 ZJAIL_DIST_DATASET="${ZJAIL_ROOT_DATASET}/dist/${ARCH}"
 ZJAIL_BASE_DATASET="${ZJAIL_ROOT_DATASET}/base/${ARCH}"
 ZJAIL_RUN_DATASET="${ZJAIL_ROOT_DATASET}/run/${ARCH}"
+ZJAIL_CONFIG_DATASET="${ZJAIL_ROOT_DATASET}/config"
 ZJAIL_DIST="${ZJAIL}/dist/${ARCH}"
 ZJAIL_BASE="${ZJAIL}/base/${ARCH}"
 ZJAIL_RUN="${ZJAIL}/run/${ARCH}"
+ZJAIL_CONFIG="${ZJAIL}/config"
+
 DIST_SRC="${DIST_SRC:-http://ftp.freebsd.org/pub/FreeBSD/releases/}"
 
 ### Setup environment
@@ -150,6 +154,7 @@ create_zfs_datasets () {
     _check /sbin/zfs create -p \"${ZJAIL_DIST_DATASET}\"
     _check /sbin/zfs create -p \"${ZJAIL_BASE_DATASET}\"
     _check /sbin/zfs create -p \"${ZJAIL_RUN_DATASET}\"
+    _check /sbin/zfs create -p \"${ZJAIL_CONFIG_DATASET}\"
 }
 
 ### Releases
@@ -327,7 +332,7 @@ get_ipv6_suffix() {
 
 create_instance() {
     local _base="${1:-}"
-    local _usage="$0 [-g <global_template>] [-t <jail_template>] [-j <jail_param>].."
+    local _usage="$0 [-h <hostname>] [-g <global_template>] [-t <jail_template>] [-j <jail_param>].."
 
     if [ -z "${_base}" ]
     then
@@ -339,9 +344,13 @@ create_instance() {
     local _template=""
     local _global=""
     local _jail_params=""
+    local _hostname=""
 
-    while getopts "g:t:j:" _opt; do
+    while getopts "g:t:j:h:" _opt; do
         case "${_opt}" in
+            h)
+                _hostname="${OPTARG}"
+                ;;
             g)
                 _global="$(_run cat \"${OPTARG}\")" || _fatal "Global template not found: ${OPTARG}"
                 ;;
@@ -368,7 +377,7 @@ create_instance() {
     then
         _fatal "Cant find snapshot: ${ZJAIL_BASE}/${_base}"
     fi
-
+    
     # Generate random 64-bit jail_id and IPv6 suffix
     local _instance_id="$(_run gen_id)"
     if [ ${#_instance_id} -ne 13 ]
@@ -377,8 +386,14 @@ create_instance() {
     fi
     local _jail_ipv6_suffix=$(get_ipv6_suffix "$_instance_id")
 
+    if [ -z "${_hostname}" ]
+    then
+        _hostname="${_instance_id}"
+    fi
+
     _check /sbin/zfs clone \"${_latest}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
     _check /sbin/zfs set zjail:id=\"${_instance_id}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
+    _check /sbin/zfs set zjail:hostname=\"${_hostname}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
     _check /sbin/zfs set zjail:base=\"${_latest}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
     _check /sbin/zfs set zjail:suffix=\"${_jail_ipv6_suffix}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
 
@@ -386,9 +401,10 @@ create_instance() {
 ${_global}
 ${_instance_id} {
     \$id = ${_instance_id};
+    \$hostname = \"${_hostname}\";
     \$suffix = ${_jail_ipv6_suffix};
     path = \"${ZJAIL_RUN}/${_instance_id}\";
-    host.hostname = ${_instance_id};
+    host.hostname = \"${_hostname}\";
     ip6.addr += lo1|::\$suffix;
     persist;
     ${_template}
