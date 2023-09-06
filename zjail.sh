@@ -405,6 +405,25 @@ ${_instance_id} {
     printf 'ID: %s\nSuffix: %s\n' $_instance_id $_jail_ipv6_suffix
 }
 
+edit_instance_conf() {
+    local _instance_id="${1:-}"
+    if [ -z "${_instance_id}" ]
+    then
+        _fatal "Usage: $0 <instance>"
+    fi
+
+    # Check we have a valid instance
+    _silent /sbin/zfs get -H -o value zjail:id \"${ZJAIL_RUN_DATASET}/${_instance_id}\" || _fatal "INSTANCE [${_instance_id}] not found"
+    local _tmpfile=$(_run /usr/bin/mktemp) || _fatal "Cant create TMPFILE"
+    trap "/bin/rm -f ${_tmpfile}" EXIT
+    _check "/sbin/zfs get -H -o value zjail:conf \"${ZJAIL_RUN_DATASET}/${_instance_id}\" > ${_tmpfile}"
+    _run ${EDITOR:-/usr/bin/vi} \"${_tmpfile}\"
+    local _jail_conf="$(cat ${_tmpfile})"
+    _log_cmdline /sbin/zfs set zjail:conf=\"${_jail_conf}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
+    /sbin/zfs set zjail:conf="${_jail_conf}" "${ZJAIL_RUN_DATASET}/${_instance_id}" || _fatal "Cant set zjail:conf property"
+    _check /bin/rm -f ${_tmpfile}
+}
+
 start_instance() {
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
