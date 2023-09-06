@@ -405,7 +405,7 @@ ${_instance_id} {
     printf 'ID: %s\nSuffix: %s\n' $_instance_id $_jail_ipv6_suffix
 }
 
-edit_instance_conf() {
+edit_jail_conf() {
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
