@@ -29,7 +29,7 @@ _log() {
     #
     # Note: The cmdline is `eval`-ed so need to be careful with quoting .
     #   DIR="A B C"
-    #   _log mkdir \"${DIR}\"
+    #   _log mkdir \""${DIR}"\"
     #
     local _cmd="$@"
     if [ -n "$DEBUG" ]
@@ -46,7 +46,7 @@ _log() {
 }
 
 _run() {
-    # Run command directly (logs cmd if $DEBUG set)
+    # Run command directly via eval (logs cmd if $DEBUG set)
     local _cmd="$@"
     [ -n "$DEBUG" ] && _log_cmdline "$_cmd"
     eval "$_cmd"
@@ -81,28 +81,6 @@ _check() {
         eval "$_cmd" || exit $?
     fi
 
-}
-
-_install_stdin() {
-    # Run install utility with input from stdin - needed as /bin/sh
-    # doesnt support <(...)
-    local _args=""
-    local _tmp=$(mktemp) || return $?
-    local _opts=$(getopt bCcdpSsUvB:D:f:g:h:l:M:m:N:o:T: $*) || return $?
-    set -- $_opts
-    while :; do
-      case "$1" in
-        --) shift;break
-            ;;
-        *)  _args="${_args} $1";shift
-            ;;
-      esac
-    done
-    tee -a "${_tmp}" 2>&1
-    install ${_args} "${_tmp}" $*
-    local _status=$?
-    rm -f "${_tmp}"
-    return $_status
 }
 
 _fatal() {
@@ -149,20 +127,20 @@ DIST_SRC="${DIST_SRC:-http://ftp.freebsd.org/pub/FreeBSD/releases/}"
 ### Setup environment
 
 create_zfs_datasets () {
-    _silent /sbin/zfs list -H -o name \"${ZJAIL_ROOT_DATASET}\" && _fatal "Dataset ${ZJAIL_ROOT_DATASET} exists"
-    _check /sbin/zfs create -o compression=lz4 -o mountpoint=\"${ZJAIL}\" -p \"${ZJAIL_ROOT_DATASET}\"
-    _check /sbin/zfs create -p \"${ZJAIL_DIST_DATASET}\"
-    _check /sbin/zfs create -p \"${ZJAIL_BASE_DATASET}\"
-    _check /sbin/zfs create -p \"${ZJAIL_RUN_DATASET}\"
-    _check /sbin/zfs create -p \"${ZJAIL_CONFIG_DATASET}\"
+    _silent /sbin/zfs list -H -o name \""${ZJAIL_ROOT_DATASET}"\" && _fatal "Dataset ${ZJAIL_ROOT_DATASET} exists"
+    _check /sbin/zfs create -o compression=lz4 -o mountpoint=\""${ZJAIL}"\" -p \""${ZJAIL_ROOT_DATASET}"\"
+    _check /sbin/zfs create -p \""${ZJAIL_DIST_DATASET}"\"
+    _check /sbin/zfs create -p \""${ZJAIL_BASE_DATASET}"\"
+    _check /sbin/zfs create -p \""${ZJAIL_RUN_DATASET}"\"
+    _check /sbin/zfs create -p \""${ZJAIL_CONFIG_DATASET}"\"
 }
 
 ### Releases
 
 fetch_release() {
     local _release="${1:-${OS_RELEASE}}"
-    _silent /bin/test -d \"${ZJAIL_DIST}\" || _fatal "ZJAIL_DIST [${ZJAIL_DIST}] not found"
-    _check /bin/mkdir \"${ZJAIL_DIST}/${_release}\"
+    _silent /bin/test -d \""${ZJAIL_DIST}"\" || _fatal "ZJAIL_DIST [${ZJAIL_DIST}] not found"
+    _check /bin/mkdir \""${ZJAIL_DIST}/${_release}"\"
     if [ "${ARCH}" = "amd64" ]
     then
         local _sets="base.txz lib32.txz"
@@ -171,7 +149,7 @@ fetch_release() {
     fi
     for _f in $_sets
     do
-        _check /usr/bin/fetch -o \"${ZJAIL_DIST}/${_release}/${_f}\" \"${DIST_SRC}/${ARCH}/${_release}/${_f}\"
+        _check /usr/bin/fetch -o \""${ZJAIL_DIST}/${_release}/${_f}"\" \""${DIST_SRC}/${ARCH}/${_release}/${_f}"\"
     done
 }
 
@@ -180,15 +158,15 @@ fetch_release() {
 create_base() {
     local _name="${1:-${OS_RELEASE}}"
     local _release="${2:-${OS_RELEASE}}"
-    _silent /bin/test -d \"${ZJAIL_BASE}\" || _fatal "ZJAIL_BASE [${ZJAIL_BASE}] not found"
-    _silent /bin/test -d \"${ZJAIL_DIST}/${_release}\" || _fatal "RELEASE [${ZJAIL_DIST}/${_release}] not found"
-    _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" && _fatal "BASE [${ZJAIL_BASE}/${_name}] exists"
-    _check /sbin/zfs create -p \"${ZJAIL_BASE_DATASET}/${_name}\"
+    _silent /bin/test -d \""${ZJAIL_BASE}"\" || _fatal "ZJAIL_BASE [${ZJAIL_BASE}] not found"
+    _silent /bin/test -d \""${ZJAIL_DIST}/${_release}"\" || _fatal "RELEASE [${ZJAIL_DIST}/${_release}] not found"
+    _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" && _fatal "BASE [${ZJAIL_BASE}/${_name}] exists"
+    _check /sbin/zfs create -p \""${ZJAIL_BASE_DATASET}/${_name}"\"
     for _f in "${ZJAIL_DIST}/${_release}"/*.txz
     do
-        _check /usr/bin/tar -C \"${ZJAIL_BASE}/${_name}\" -xf \"${_f}\"
+        _check /usr/bin/tar -C \""${ZJAIL_BASE}/${_name}"\" -xf \""${_f}"\"
     done
-    _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
+    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
 update_base() {
@@ -197,37 +175,37 @@ update_base() {
     then
         _fatal "Usage: update_base <base>"
     fi
-    _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+    _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
 
     # Copy local resolv.conf
-    _check /bin/cp /etc/resolv.conf \"${ZJAIL_BASE}/${_name}/etc/resolv.conf\"
+    _check /bin/cp /etc/resolv.conf \""${ZJAIL_BASE}/${_name}/etc/resolv.conf"\"
 
     # Set hostname
-    _check /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /bin/hostname \"${_name}\"
+    _check /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /bin/hostname \""${_name}"\"
 
     # Run freebsd-update in chroot
-    local _version=$(_run /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /bin/freebsd-version) || _fatal "Cant get freebsd-version"
-    _check PAGER=\"/usr/bin/tail -n0\" /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" \
-        /usr/sbin/freebsd-update --currently-running \"${_version}\" --not-running-from-cron fetch
-    _log /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" \
+    local _version=$(_run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /bin/freebsd-version) || _fatal "Cant get freebsd-version"
+    _check PAGER=\""/usr/bin/tail -n0"\" /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" \
+        /usr/sbin/freebsd-update --currently-running \""${_version}"\" --not-running-from-cron fetch
+    _log /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" \
         /usr/sbin/freebsd-update --not-running-from-cron updatesready
     if [ $? -eq 0 ]
     then
-        _check PAGER=/bin/cat /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" \
+        _check PAGER=/bin/cat /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" \
             /usr/sbin/freebsd-update --not-running-from-cron install
     fi
 
     # Update pkg (bootstrap if necessary)
-    _log /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/pkg -N
+    _log /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg -N
     if [ $? -ne 0 ]
     then
-        _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/pkg bootstrap
+        _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg bootstrap
     fi
-    _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/pkg update
-    _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" /usr/sbin/pkg upgrade
+    _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg update
+    _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg upgrade
 
     # Create snapshot
-    _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
+    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
 chroot_base() {
@@ -236,16 +214,16 @@ chroot_base() {
     then
         _fatal "Usage: chroot_base <base>"
     fi
-    _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+    _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
 
     shift
     if [ "$#" -gt 0 ]
     then
-        _run /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" $@
+        _run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" $@
     else
-        _run /usr/sbin/chroot \"${ZJAIL_BASE}/${_name}\" env PS1=\"${_name} \> \" /bin/sh
+        _run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" env PS1=\""${_name} \> "\" /bin/sh
     fi
-    # _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
+    # _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
 clone_base() {
@@ -255,8 +233,8 @@ clone_base() {
     then
         _fatal "Usage: clone_base <base> <target>"
     fi
-    _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
-    _silent /bin/test -d \"${ZJAIL_BASE}/${_target}\" && _fatal "TARGET [${ZJAIL_BASE}/${_target}] exists"
+    _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+    _silent /bin/test -d \""${ZJAIL_BASE}/${_target}"\" && _fatal "TARGET [${ZJAIL_BASE}/${_target}] exists"
 
     local _latest=$(get_latest_snapshot "${_name}")
     if [ -z "${_latest}" ]
@@ -264,8 +242,8 @@ clone_base() {
         _fatal "Cant find snapshot: ${ZJAIL_BASE}/${_name}"
     fi
 
-    _check /sbin/zfs clone \"${_latest}\" \"${ZJAIL_BASE_DATASET}/${_target}\"
-    _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_target}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
+    _check /sbin/zfs clone \""${_latest}"\" \""${ZJAIL_BASE_DATASET}/${_target}"\"
+    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_target}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
 
@@ -275,8 +253,8 @@ snapshot_base() {
     then
         _fatal "Usage: snapshot_base <base>"
     fi
-    _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
-    _check /sbin/zfs snapshot \"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
+    _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
 get_latest_snapshot() {
@@ -285,8 +263,8 @@ get_latest_snapshot() {
     then
         _fatal "Usage: get_latest_snapshot <base>"
     fi
-    _silent /bin/test -d \"${ZJAIL_BASE}/${_name}\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
-    _run "/sbin/zfs list -H -t snap -s creation -o name \"${ZJAIL_BASE_DATASET}/${_name}\" | tail -1"
+    _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+    _run "/sbin/zfs list -H -t snap -s creation -o name \""${ZJAIL_BASE_DATASET}/${_name}"\" | tail -1"
 }
 
 ### Instances
@@ -341,36 +319,9 @@ create_instance() {
 
     shift
 
-    local _template=""
-    local _global=""
-    local _jail_params=""
-    local _hostname=""
-
-    while getopts "g:t:j:h:" _opt; do
-        case "${_opt}" in
-            h)
-                _hostname="${OPTARG}"
-                ;;
-            g)
-                _global="$(_run cat \"${OPTARG}\")" || _fatal "Global template not found: ${OPTARG}"
-                ;;
-            t)
-                _template="$(_run cat \"${OPTARG}\")" || _fatal "Jail template not found: ${OPTARG}"
-                ;;
-            j)
-                _jail_params="$(printf '%s\n%s;' "${_jail_params}" "${OPTARG}")"
-                ;;
-            \?)
-                _fatal "Usage: ${_usage}"
-                ;;
-            :)
-                _fatal "Usage: ${_usage}"
-                ;;
-        esac
-    done
-
-    _silent /bin/test -d \"${ZJAIL_BASE}/${_base}\" || _fatal "BASE [${ZJAIL_BASE}/${_base}] not found"
-    _silent /bin/test -d \"${ZJAIL_RUN}\" || _fatal "ZJAIL_RUN [${ZJAIL_RUN}] not found"
+    # Check base image and run mount point exists
+    _silent /bin/test -d \""${ZJAIL_BASE}/${_base}"\" || _fatal "BASE [${ZJAIL_BASE}/${_base}] not found"
+    _silent /bin/test -d \""${ZJAIL_RUN}"\" || _fatal "ZJAIL_RUN [${ZJAIL_RUN}] not found"
 
     local _latest=$(get_latest_snapshot "${_base}")
     if [ -z "${_latest}" ]
@@ -384,27 +335,61 @@ create_instance() {
     then
         _err "Invalid _instance_id: ${_instance_id}"
     fi
+
     local _jail_ipv6_suffix=$(get_ipv6_suffix "$_instance_id")
+
+    # Clone base
+    _check /sbin/zfs clone \""${_latest}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
+
+    # Delay options processing until after we have created the image dataset so
+    # that we can operate on this directly
+    
+    local _template=""
+    local _global=""
+    local _jail_params=""
+    local _hostname=""
+
+    while getopts "g:t:j:h:" _opt; do
+        case "${_opt}" in
+            h)
+                _hostname="${OPTARG}"
+                ;;
+            g)
+                _global="$(_run cat \""${OPTARG}"\")" || _fatal "Global template not found: ${OPTARG}"
+                ;;
+            t)
+                _template="$(_run cat \""${OPTARG}"\")" || _fatal "Jail template not found: ${OPTARG}"
+                ;;
+            j)
+                _jail_params="$(printf '%s\n%s;' "${_jail_params}" "${OPTARG}")"
+                ;;
+            \?)
+                _fatal "Usage: ${_usage}"
+                ;;
+            :)
+                _fatal "Usage: ${_usage}"
+                ;;
+        esac
+    done
 
     if [ -z "${_hostname}" ]
     then
         _hostname="${_instance_id}"
     fi
 
-    _check /sbin/zfs clone \"${_latest}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
-    _check /sbin/zfs set zjail:id=\"${_instance_id}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
-    _check /sbin/zfs set zjail:hostname=\"${_hostname}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
-    _check /sbin/zfs set zjail:base=\"${_latest}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
-    _check /sbin/zfs set zjail:suffix=\"${_jail_ipv6_suffix}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
+    _check /sbin/zfs set zjail:id=\""${_instance_id}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
+    _check /sbin/zfs set zjail:hostname=\""${_hostname}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
+    _check /sbin/zfs set zjail:base=\""${_latest}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
+    _check /sbin/zfs set zjail:suffix=\""${_jail_ipv6_suffix}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
 
     local _jail_conf="\
 ${_global}
 ${_instance_id} {
     \$id = ${_instance_id};
-    \$hostname = \"${_hostname}\";
+    \$hostname = \""${_hostname}"\";
     \$suffix = ${_jail_ipv6_suffix};
-    path = \"${ZJAIL_RUN}/${_instance_id}\";
-    host.hostname = \"${_hostname}\";
+    path = \""${ZJAIL_RUN}/${_instance_id}"\";
+    host.hostname = \""${_hostname}"\";
     ip6.addr += lo1|::\$suffix;
     persist;
     ${_template}
@@ -412,11 +397,11 @@ ${_instance_id} {
 }
 "
     # Dont use _check to avoid double quoting problems
-    _log_cmdline /sbin/zfs set zjail:conf=\"${_jail_conf}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
+    _log_cmdline /sbin/zfs set zjail:conf=\""${_jail_conf}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     /sbin/zfs set zjail:conf="${_jail_conf}" "${ZJAIL_RUN_DATASET}/${_instance_id}" || _fatal "Cant set zjail:conf property"
 
-    _check /sbin/zfs snapshot \"${ZJAIL_RUN_DATASET}/${_instance_id}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"
-    _check "/sbin/zfs get -H -o value zjail:conf \"${ZJAIL_RUN_DATASET}/${_instance_id}\" | jail -vf - -c ${_instance_id}"
+    _check /sbin/zfs snapshot \""${ZJAIL_RUN_DATASET}/${_instance_id}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
+    _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -c ${_instance_id}"
 
     printf 'ID: %s\nSuffix: %s\n' $_instance_id $_jail_ipv6_suffix
 }
@@ -429,13 +414,13 @@ edit_jail_conf() {
     fi
 
     # Check we have a valid instance
-    _silent /sbin/zfs get -H -o value zjail:id \"${ZJAIL_RUN_DATASET}/${_instance_id}\" || _fatal "INSTANCE [${_instance_id}] not found"
+    _silent /sbin/zfs get -H -o value zjail:id \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" || _fatal "INSTANCE [${_instance_id}] not found"
     local _tmpfile=$(_run /usr/bin/mktemp) || _fatal "Cant create TMPFILE"
     trap "/bin/rm -f ${_tmpfile}" EXIT
-    _check "/sbin/zfs get -H -o value zjail:conf \"${ZJAIL_RUN_DATASET}/${_instance_id}\" > ${_tmpfile}"
-    _run ${EDITOR:-/usr/bin/vi} \"${_tmpfile}\"
+    _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" > ${_tmpfile}"
+    _run ${EDITOR:-/usr/bin/vi} \""${_tmpfile}"\"
     local _jail_conf="$(cat ${_tmpfile})"
-    _log_cmdline /sbin/zfs set zjail:conf=\"${_jail_conf}\" \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
+    _log_cmdline /sbin/zfs set zjail:conf=\""${_jail_conf}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     /sbin/zfs set zjail:conf="${_jail_conf}" "${ZJAIL_RUN_DATASET}/${_instance_id}" || _fatal "Cant set zjail:conf property"
     _check /bin/rm -f ${_tmpfile}
 }
@@ -448,9 +433,9 @@ start_instance() {
     fi
 
     # Check we have a valid instance
-    _silent /sbin/zfs get -H -o value zjail:id \"${ZJAIL_RUN_DATASET}/${_instance_id}\" || _fatal "INSTANCE [${_instance_id}] not found"
+    _silent /sbin/zfs get -H -o value zjail:id \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" || _fatal "INSTANCE [${_instance_id}] not found"
     _silent /usr/sbin/jls -j "${_instance_id}" jid && _fatal "INSTANCE [${_instance_id}] running"
-    _check "/sbin/zfs get -H -o value zjail:conf \"${ZJAIL_RUN_DATASET}/${_instance_id}\" | jail -vf - -c ${_instance_id}"
+    _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -c ${_instance_id}"
 }
 
 stop_instance() {
@@ -460,9 +445,9 @@ stop_instance() {
         _fatal "Usage: $0 <instance>"
     fi
 
-    _silent /sbin/zfs get -H -o value zjail:id \"${ZJAIL_RUN_DATASET}/${_instance_id}\" || _fatal "INSTANCE [${_instance_id}] not found"
+    _silent /sbin/zfs get -H -o value zjail:id \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" || _fatal "INSTANCE [${_instance_id}] not found"
     _silent /usr/sbin/jls -j "${_instance_id}" jid || _fatal "INSTANCE [${_instance_id}] not running"
-    _check "/sbin/zfs get -H -o value zjail:conf \"${ZJAIL_RUN_DATASET}/${_instance_id}\" | jail -vf - -r ${_instance_id}"
+    _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -r ${_instance_id}"
 }
 
 destroy_instance() {
@@ -472,11 +457,11 @@ destroy_instance() {
         _fatal "Usage: $0 <instance>"
     fi
 
-    _silent /sbin/zfs get -H -o value zjail:id \"${ZJAIL_RUN_DATASET}/${_instance_id}\" || _fatal "INSTANCE [${_instance_id}] not found"
+    _silent /sbin/zfs get -H -o value zjail:id \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" || _fatal "INSTANCE [${_instance_id}] not found"
     # XXX Check for -f flag before shutting down
     _silent /usr/sbin/jls -j "${_instance_id}" jid && \
-        _check "/sbin/zfs get -H -o value zjail:conf \"${ZJAIL_RUN_DATASET}/${_instance_id}\" | jail -vf - -r ${_instance_id}"
-    _check /sbin/zfs destroy -r \"${ZJAIL_RUN_DATASET}/${_instance_id}\"
+        _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -r ${_instance_id}"
+    _check /sbin/zfs destroy -r \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
 }
 
 cli() {
