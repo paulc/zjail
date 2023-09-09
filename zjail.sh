@@ -97,11 +97,12 @@ trap _exitf EXIT
 
 ### ZFS Layout
 #
-# ${ZPOOL}/zjail mountpoint=${ZJAIL}
-# ${ZPOOL}/zjail/dist/<arch>/<os-release>
-# ${ZPOOL}/zjail/base/<arch>/<base>
-# ${ZPOOL}/zjail/run/<arch>/<image>>
-# ${ZPOOL}/zjail/config
+# ${ZPOOL}/${ZJAIL} mountpoint=${ZJAIL}
+# ${ZPOOL}/${ZJAIL}/dist/<arch>/<os-release>
+# ${ZPOOL}/${ZJAIL}/base/<arch>/<base>
+# ${ZPOOL}/${ZJAIL}/run/<arch>/<image>>
+# ${ZPOOL}/${ZJAIL}/config
+# ${ZPOOL}/${ZJAIL}/volumes
 #
 
 ### Config
@@ -111,16 +112,17 @@ ABI="$(/usr/bin/printf '%s:%d:%s' $(/usr/bin/uname -s) $(($(/usr/bin/uname -U) /
 OS_RELEASE="$(/sbin/sysctl -n kern.osrelease)"
 OS_RELEASE="${OS_RELEASE%-p[0-9]*}"     # Strip patch
 ZPOOL="${ZPOOL:-zroot}"
-ZJAIL="${ZJAIL:-/zjail}"
-ZJAIL_ROOT_DATASET="${ZPOOL}/zjail"
+ZJAIL="${ZJAIL:-zjail}"
+ZJAIL_ROOT_DATASET="${ZPOOL}/${ZJAIL}"
 ZJAIL_DIST_DATASET="${ZJAIL_ROOT_DATASET}/dist/${ARCH}"
 ZJAIL_BASE_DATASET="${ZJAIL_ROOT_DATASET}/base/${ARCH}"
 ZJAIL_RUN_DATASET="${ZJAIL_ROOT_DATASET}/run/${ARCH}"
 ZJAIL_CONFIG_DATASET="${ZJAIL_ROOT_DATASET}/config"
-ZJAIL_DIST="${ZJAIL}/dist/${ARCH}"
-ZJAIL_BASE="${ZJAIL}/base/${ARCH}"
-ZJAIL_RUN="${ZJAIL}/run/${ARCH}"
-ZJAIL_CONFIG="${ZJAIL}/config"
+ZJAIL_VOLUMES_DATASET="${ZJAIL_ROOT_DATASET}/volumes"
+ZJAIL_DIST="/${ZJAIL}/dist/${ARCH}"
+ZJAIL_BASE="/${ZJAIL}/base/${ARCH}"
+ZJAIL_RUN="/${ZJAIL}/run/${ARCH}"
+ZJAIL_CONFIG="/${ZJAIL}/config"
 
 DIST_SRC="${DIST_SRC:-http://ftp.freebsd.org/pub/FreeBSD/releases/}"
 
@@ -128,11 +130,12 @@ DIST_SRC="${DIST_SRC:-http://ftp.freebsd.org/pub/FreeBSD/releases/}"
 
 create_zfs_datasets () {
     _silent /sbin/zfs list -H -o name \""${ZJAIL_ROOT_DATASET}"\" && _fatal "Dataset ${ZJAIL_ROOT_DATASET} exists"
-    _check /sbin/zfs create -o compression=lz4 -o mountpoint=\""${ZJAIL}"\" -p \""${ZJAIL_ROOT_DATASET}"\"
+    _check /sbin/zfs create -o compression=lz4 -o mountpoint=\""/${ZJAIL}"\" -p \""${ZJAIL_ROOT_DATASET}"\"
     _check /sbin/zfs create -p \""${ZJAIL_DIST_DATASET}"\"
     _check /sbin/zfs create -p \""${ZJAIL_BASE_DATASET}"\"
     _check /sbin/zfs create -p \""${ZJAIL_RUN_DATASET}"\"
     _check /sbin/zfs create -p \""${ZJAIL_CONFIG_DATASET}"\"
+    _check /sbin/zfs create -p \""${ZJAIL_VOLUMES_DATASET}"\"
 }
 
 ### Releases
@@ -196,6 +199,11 @@ update_base() {
     fi
 
     # Update pkg (bootstrap if necessary)
+    
+    # Make sure /dev/null is available in chroot
+    _check /sbin/mount -t devfs -o ruleset=1 devfs \""${ZJAIL_RUN}/${_instance_id}/dev"\"
+    _check /sbin/devfs -m \""${ZJAIL_RUN}/${_instance_id}/dev"\" rule -s 2 applyset
+
     _log /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg -N
     if [ $? -ne 0 ]
     then
@@ -203,6 +211,8 @@ update_base() {
     fi
     _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg update
     _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg upgrade
+
+    _check /sbin/umount \""${ZJAIL_RUN}/${_instance_id}/dev"\"
 
     # Create snapshot
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
@@ -221,7 +231,7 @@ chroot_base() {
     then
         _run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" $@
     else
-        _run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" env PS1=\""${_name} \> "\" /bin/sh
+        _run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" env PS1=\""${_name} > "\" /bin/sh
     fi
     # _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
@@ -245,7 +255,6 @@ clone_base() {
     _check /sbin/zfs clone \""${_latest}"\" \""${ZJAIL_BASE_DATASET}/${_target}"\"
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_target}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
-
 
 snapshot_base() {
     local _name="${1:-}"
@@ -279,12 +288,17 @@ gen_id() {
     do
         set -- $(od -v -An -N8 -t u4 /dev/urandom)
     done
-    # Use bc to generate pseudo-base32 encoded string from 64bit uint
-    # (Note this isnt a normal base32 and just uses fixed 13 chars (13*5 = 65))
-    bc -l -e "x = $1 * $2" \
-          -e 'for (i=0;i<13;i++) { mod = band(x,31); x = bshr(x,5); if (mod < 10) { c[12-i] = mod + 48 } else { c[12-i] = mod + 65 - 10 } }' \
-          -e 'print asciify(c[]),"\n"' \
-          | sed -e '1s/ //g' -e '1s/\(....\)\(....\)\(....\)\(....\)/\1:\2:\3:\4/'
+    # Ensure id is not all-numeric (invalid jail name) - probability is very low (c. 2.6e-07) but check anyway
+    local _id="0000000000000"
+    while expr "${_id}" : '^[0-9]*$' >/dev/null
+    do
+        # Use bc to generate pseudo-base32 encoded string from 64bit uint
+        # (Note this isnt a normal base32 and just uses fixed 13 chars (13*5 = 65))
+        _id="$(bc -l -e "x = $1 * $2" \
+              -e 'for (i=0;i<13;i++) { mod = band(x,31); x = bshr(x,5); if (mod < 10) { c[12-i] = mod + 48 } else { c[12-i] = mod + 65 - 10 } }' \
+              -e 'print asciify(c[]),"\n"')"
+    done
+    printf '%s\n' "${_id}"
 }
 
 # Generate 64-bit IPv6 suffix from pseudo-base32 ID
@@ -310,7 +324,7 @@ get_ipv6_suffix() {
 
 create_instance() {
     local _base="${1:-}"
-    local _usage="$0 [-h <hostname>] [-g <global_template>] [-t <jail_template>] [-j <jail_param>].."
+    local _usage="$0 [-a] [-h <hostname>] [-s <site_template>] [-t <jail_template>] [-j <jail_param>].. [-c <host_path>:<instance_path>].."
 
     if [ -z "${_base}" ]
     then
@@ -345,23 +359,48 @@ create_instance() {
     # that we can operate on this directly
     
     local _template=""
-    local _global=""
+    local _site=""
     local _jail_params=""
     local _hostname=""
+    local _autostart="off"
 
-    while getopts "g:t:j:h:" _opt; do
+    while getopts "ac:s:t:j:h:p:" _opt; do
         case "${_opt}" in
+            a)
+                _autostart="on"
+                ;;
+            c)
+                local _host_path="${OPTARG%:*}"
+                local _instance_path="${OPTARG#*:}"
+                _check cp \""${_host_path}"\" \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
+                ;;
             h)
                 _hostname="${OPTARG}"
                 ;;
-            g)
-                _global="$(_run cat \""${OPTARG}"\")" || _fatal "Global template not found: ${OPTARG}"
-                ;;
-            t)
-                _template="$(_run cat \""${OPTARG}"\")" || _fatal "Jail template not found: ${OPTARG}"
+            s)
+                _site="$(_run cat \""${OPTARG}"\")" || _fatal "Site template not found: ${OPTARG}"
                 ;;
             j)
                 _jail_params="$(printf '%s\n%s;' "${_jail_params}" "${OPTARG}")"
+                ;;
+            p)
+                # Make sure /dev/null is available in chroot
+                _check /sbin/mount -t devfs -o ruleset=1 devfs \""${ZJAIL_RUN}/${_instance_id}/dev"\"
+                _check /sbin/devfs -m \""${ZJAIL_RUN}/${_instance_id}/dev"\" rule -s 2 applyset
+
+                # Update pkg (bootstrap if necessary)
+                _log /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/pkg -N
+                if [ $? -ne 0 ]
+                then
+                    _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/pkg bootstrap
+                fi
+
+                _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/pkg install \""${OPTARG}"\"
+
+                _check /sbin/umount \""${ZJAIL_RUN}/${_instance_id}/dev"\"
+                ;;
+            t)
+                _template="$(_run cat \""${OPTARG}"\")" || _fatal "Jail template not found: ${OPTARG}"
                 ;;
             \?)
                 _fatal "Usage: ${_usage}"
@@ -381,16 +420,16 @@ create_instance() {
     _check /sbin/zfs set zjail:hostname=\""${_hostname}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:base=\""${_latest}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:suffix=\""${_jail_ipv6_suffix}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
+    _check /sbin/zfs set zjail:autostart=\""${_autostart}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
 
     local _jail_conf="\
-${_global}
+${_site}
 ${_instance_id} {
     \$id = ${_instance_id};
     \$hostname = \""${_hostname}"\";
     \$suffix = ${_jail_ipv6_suffix};
     path = \""${ZJAIL_RUN}/${_instance_id}"\";
     host.hostname = \""${_hostname}"\";
-    ip6.addr += lo1|::\$suffix;
     persist;
     ${_template}
     ${_jail_params}
@@ -404,6 +443,12 @@ ${_instance_id} {
     _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -c ${_instance_id}"
 
     printf 'ID: %s\nSuffix: %s\n' $_instance_id $_jail_ipv6_suffix
+}
+
+list_instances() {
+
+
+
 }
 
 edit_jail_conf() {
