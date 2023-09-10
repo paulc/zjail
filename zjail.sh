@@ -85,12 +85,12 @@ _check() {
 
 _fatal() {
     # Exit with message
-    printf '%sFATAL: %s%s\n' "${COLOUR:+${_RED}}" "$@" "${COLOUR:+${_NORMAL}}"
+    printf '%sFATAL: %s%s\n' "${COLOUR:+${_RED}}" "$@" "${COLOUR:+${_NORMAL}}" >&2
     exit 1
 }
 
 _exitf() {
-    printf '%s' "${COLOUR:+${_NORMAL}}"
+    printf '%s' "${COLOUR:+${_NORMAL}}" >&2
 }
 
 trap _exitf EXIT
@@ -201,8 +201,8 @@ update_base() {
     # Update pkg (bootstrap if necessary)
     
     # Make sure /dev/null is available in chroot
-    _check /sbin/mount -t devfs -o ruleset=1 devfs \""${ZJAIL_RUN}/${_instance_id}/dev"\"
-    _check /sbin/devfs -m \""${ZJAIL_RUN}/${_instance_id}/dev"\" rule -s 2 applyset
+    _check /sbin/mount -t devfs -o ruleset=1 devfs \""${ZJAIL_BASE}/${_name}/dev"\"
+    _check /sbin/devfs -m \""${ZJAIL_BASE}/${_name}/dev"\" rule -s 2 applyset
 
     _log /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg -N
     if [ $? -ne 0 ]
@@ -212,7 +212,7 @@ update_base() {
     _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg update
     _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg upgrade
 
-    _check /sbin/umount \""${ZJAIL_RUN}/${_instance_id}/dev"\"
+    _check /sbin/umount \""${ZJAIL_BASE}/${_name}/dev"\"
 
     # Create snapshot
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
@@ -324,7 +324,7 @@ get_ipv6_suffix() {
 
 create_instance() {
     local _base="${1:-}"
-    local _usage="$0 [-a] [-h <hostname>] [-s <site_template>] [-t <jail_template>] [-j <jail_param>].. [-c <host_path>:<instance_path>].."
+    local _usage="$0 [-a] [-h <hostname>] [-s <site_template>] [-j <jail_param>].. [-c <host_path>:<instance_path>].. [-p <pkg>].. [-r <rcctl>]"
 
     if [ -z "${_base}" ]
     then
@@ -358,37 +358,54 @@ create_instance() {
     # Delay options processing until after we have created the image dataset so
     # that we can operate on this directly
     
-    local _template=""
     local _site=""
     local _jail_params=""
     local _hostname=""
     local _autostart="off"
 
-    while getopts "ac:s:t:j:h:p:" _opt; do
+    if [ -f "${ZJAIL_CONFIG}/site.conf" ]
+    then
+        _site="$(_run cat \""${ZJAIL_CONFIG}/site.conf"\")" || _fatal "Site template not found: ${OPTARG}"
+    fi
+
+    while getopts "ac:s:t:j:h:p:r:" _opt; do
         case "${_opt}" in
             a)
+                # Autostart
                 _autostart="on"
                 ;;
             c)
+                # Copy file from host
                 local _host_path="${OPTARG%:*}"
                 local _instance_path="${OPTARG#*:}"
                 _check cp \""${_host_path}"\" \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
                 ;;
             h)
+                # Set hostname
                 _hostname="${OPTARG}"
                 ;;
             s)
+                # Set site template
                 _site="$(_run cat \""${OPTARG}"\")" || _fatal "Site template not found: ${OPTARG}"
                 ;;
             j)
+                # Add jail param
                 _jail_params="$(printf '%s\n%s;' "${_jail_params}" "${OPTARG}")"
                 ;;
             p)
+                # Install pkg
+
                 # Make sure /dev/null is available in chroot
                 _check /sbin/mount -t devfs -o ruleset=1 devfs \""${ZJAIL_RUN}/${_instance_id}/dev"\"
                 _check /sbin/devfs -m \""${ZJAIL_RUN}/${_instance_id}/dev"\" rule -s 2 applyset
 
-                # Update pkg (bootstrap if necessary)
+                # Check for resolv.conf in jail (copy host file is missing)
+                if [ ! -f "${ZJAIL_RUN}/${_instance_id}/etc/resolv.conf" ]
+                then
+                    _check /bin/cp /etc/resolv.conf \""${ZJAIL_RUN}/${_instance_id}/etc/resolv.conf"\"
+                fi
+
+                # Bootstrap pkg
                 _log /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/pkg -N
                 if [ $? -ne 0 ]
                 then
@@ -399,8 +416,9 @@ create_instance() {
 
                 _check /sbin/umount \""${ZJAIL_RUN}/${_instance_id}/dev"\"
                 ;;
-            t)
-                _template="$(_run cat \""${OPTARG}"\")" || _fatal "Jail template not found: ${OPTARG}"
+            r)
+                # Run sysrc
+                _check /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/sysrc \""${OPTARG}"\"
                 ;;
             \?)
                 _fatal "Usage: ${_usage}"
@@ -424,14 +442,13 @@ create_instance() {
 
     local _jail_conf="\
 ${_site}
+
 ${_instance_id} {
     \$id = ${_instance_id};
     \$hostname = \""${_hostname}"\";
     \$suffix = ${_jail_ipv6_suffix};
     path = \""${ZJAIL_RUN}/${_instance_id}"\";
     host.hostname = \""${_hostname}"\";
-    persist;
-    ${_template}
     ${_jail_params}
 }
 "
@@ -446,9 +463,32 @@ ${_instance_id} {
 }
 
 list_instances() {
+    /sbin/zfs list -H -r -o zjail:id "${ZJAIL_RUN_DATASET}" | sed -e '/^-/d'
+}
 
+list_instance_details() {
+    local _id _hostname _suffix _base _autostart
 
+    local _header="1"
 
+    _run "/sbin/zfs list -H -r -o zjail:id,zjail:hostname,zjail:suffix,zjail:base,zjail:autostart \""${ZJAIL_RUN_DATASET}"\" | sed -e '/^-/d'" | \
+        while read _id _hostname _suffix _base _autostart 
+        do
+            if [ -n "${_header}" ]
+            then
+                printf '%-14s %-16s %-19s %-32s %-9s %s\n' ID HOSTNAME SUFFIX BASE AUTOSTART STATUS
+                _header=""
+            fi
+
+            local _jid=$(jls -j "${_id}" jid 2>/dev/null)
+            if [ -n "${_jid}" ]
+            then 
+                local _status="RUNNING [${_jid}]"
+            else 
+                local _status="NOT RUNNING"
+            fi
+            printf '%-14s %-16s %-19s %-32s %-9s %s\n' "${_id}" "${_hostname}" "${_suffix}" "${_base##*/}" "${_autostart}" "${_status}"
+        done 
 }
 
 edit_jail_conf() {
@@ -506,24 +546,26 @@ destroy_instance() {
     # XXX Check for -f flag before shutting down
     _silent /usr/sbin/jls -j "${_instance_id}" jid && \
         _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -r ${_instance_id}"
+    # Wait for jail to stop
+    while jls -dj "${_instance_id}" >/dev/null 2>&1
+    do
+        sleep 0.5
+    done
     _check /sbin/zfs destroy -r \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
 }
 
-cli() {
-    while :
+autostart() {
+    for _instance_id in $(_run /sbin/zfs list -r -H -o zjail:autostart,name \""${ZJAIL_RUN_DATASET}"\" | sed -ne 's/^on.*\///p')
     do
-        read -p 'zjail> ' cmd
-        (
-          DEBUG=1
-          COLOUR=1
-          . ${0}
-          eval $cmd
-        )
+        if _silent /usr/sbin/jls -j "${_instance_id}" jid 
+        then
+            echo "INSTANCE [${_instance_id}] running"
+        else
+            _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -c ${_instance_id}"
+        fi
     done
 }
 
-if [ "${1:-}" = "cli" ]
-then
-    cli
-fi
-
+cmd="${1}"
+shift
+${cmd} "$@"
