@@ -126,6 +126,37 @@ ZJAIL_CONFIG="/${ZJAIL}/config"
 
 DIST_SRC="${DIST_SRC:-http://ftp.freebsd.org/pub/FreeBSD/releases/}"
 
+### firstboot_zjail rc.d script
+_firstboot_zjail='
+#!/bin/sh
+
+# KEYWORD: firstboot
+# PROVIDE: firstboot_zjail
+# REQUIRE: NETWORKING
+# BEFORE: LOGIN
+
+. /etc/rc.subr
+
+: ${firstboot_zjail_enable:="NO"}
+
+name="firstboot_zjail"
+rcvar="firstboot_zjail_enable"
+start_cmd="firstboot_zjail_run"
+
+firstboot_zjail_run() {
+    printf "Running firstboot_zjail scripts:\n"
+    for x in $(ls /var/firstboot_zjail)
+    do
+        printf "/var/firstboot_zjail/$x:"
+        /bin/sh "/var/firstboot_zjail/$x"
+        printf "\n"
+    done
+}
+
+load_rc_config $name
+run_rc_command "$1"
+'
+
 ### Setup environment
 
 create_zfs_datasets () {
@@ -183,9 +214,6 @@ update_base() {
     # Copy local resolv.conf
     _check /bin/cp /etc/resolv.conf \""${ZJAIL_BASE}/${_name}/etc/resolv.conf"\"
 
-    # Set hostname
-    _check /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /bin/hostname \""${_name}"\"
-
     # Run freebsd-update in chroot
     local _version=$(_run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /bin/freebsd-version) || _fatal "Cant get freebsd-version"
     _check PAGER=\""/usr/bin/tail -n0"\" /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" \
@@ -212,10 +240,35 @@ update_base() {
     _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg update
     _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg upgrade
 
+    # Unmount devfs
     _check /sbin/umount \""${ZJAIL_BASE}/${_name}/dev"\"
 
     # Create snapshot
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
+}
+
+install_firstboot() {
+    local _name="${1:-}"
+    if [ -z "${_name}" ]
+    then
+        _fatal "Usage: install_firstboot <base>"
+    fi
+    _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+    
+    # Initialise firstboot_zjail rc.d script (execs files in /var/firstboot_zjail)
+    _check /bin/mkdir -p \""${ZJAIL_BASE}/${_name}/var/firstboot_zjail"\"
+    _check /bin/mkdir -p \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d"\"
+    if ! /bin/echo "${_firstboot_zjail}" | _silent /usr/bin/tee -a \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_zjail"\"
+    then
+        _fatal "Cant write ${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_zjail"
+    fi
+    _check /bin/chmod 755 \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_zjail"\"
+    _check /usr/bin/touch \""${ZJAIL_BASE}/${_name}/firstboot"\"
+    _check /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/sysrc firstboot_zjail_enable=YES
+
+    # Create snapshot
+    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
+
 }
 
 chroot_base() {
@@ -324,7 +377,7 @@ get_ipv6_suffix() {
 
 create_instance() {
     local _base="${1:-}"
-    local _usage="$0 [-a] [-h <hostname>] [-s <site_template>] [-j <jail_param>].. [-c <host_path>:<instance_path>].. [-p <pkg>].. [-r <rcctl>]"
+    local _usage="$0 [-a] [-f] [-h <hostname>] [-s <site_template>] [-j <jail_param>].. [-c <host_path>:<instance_path>].. [-p <pkg>].. [-r <rcctl>]"
 
     if [ -z "${_base}" ]
     then
@@ -368,7 +421,7 @@ create_instance() {
         _site="$(_run cat \""${ZJAIL_CONFIG}/site.conf"\")" || _fatal "Site template not found: ${OPTARG}"
     fi
 
-    while getopts "ac:s:t:j:h:p:r:" _opt; do
+    while getopts "ac:fs:t:j:h:p:r:" _opt; do
         case "${_opt}" in
             a)
                 # Autostart
@@ -379,6 +432,18 @@ create_instance() {
                 local _host_path="${OPTARG%:*}"
                 local _instance_path="${OPTARG#*:}"
                 _check cp \""${_host_path}"\" \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
+                ;;
+            f)
+                # Initialise firstboot_zjail rc.d script (execs files in /var/firstboot_zjail)
+                _check /bin/mkdir -p \""${ZJAIL_RUN}/${_instance_id}/var/firstboot_zjail"\"
+                _check /bin/mkdir -p \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d"\"
+                if ! /bin/echo "${_firstboot_zjail}" | _silent /usr/bin/tee -a \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"\"
+                then
+                    _fatal "Cant write ${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"
+                fi
+                _check /bin/chmod 755 \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"\"
+                _check /usr/bin/touch \""${ZJAIL_RUN}/${_instance_id}/firstboot"\"
+                _check /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/sysrc firstboot_zjail_enable=YES
                 ;;
             h)
                 # Set hostname
@@ -447,6 +512,7 @@ ${_instance_id} {
     \$id = ${_instance_id};
     \$hostname = \""${_hostname}"\";
     \$suffix = ${_jail_ipv6_suffix};
+    \$root = \""${ZJAIL_RUN}/${_instance_id}"\";
     path = \""${ZJAIL_RUN}/${_instance_id}"\";
     host.hostname = \""${_hostname}"\";
     ${_jail_params}
