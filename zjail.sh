@@ -378,11 +378,28 @@ get_ipv6_suffix() {
 
 create_instance() {
     local _base="${1:-}"
-    local _usage="$0 [-a] [-f] [-h <hostname>] [-s <site_template>] [-j <jail_param>].. [-c <host_path>:<instance_path>].. [-p <pkg>].. [-r <rcctl>]"
+    local _usage="$0 create_instance
+    [-a]                                # Set sutostart flag
+    [-f]                                # Initialise firstboot rc.d script
+    [-h <hostname>]                     # Set hostname
+    [-s <site_template>]                # Set site jail.conf template
+    [-j <jail_param>]..                 # Set jail parameters
+    [-c <host_path>:<instance_path>]..  # Copy files from host to instance
+    [-e <host_path>:<instance_path>]..  # Copy files filtering through envsubst(1)
+    [-p <pkg>]..                        # Install pkg
+    [-r <sysrc>]..                      # Set rc.local parameter (through sysrc)
+    [-u <user> <pk>]..                  # Add user/ssh pk
+"
 
     if [ -z "${_base}" ]
     then
         _fatal "Usage: ${_usage}"
+    fi
+    
+    if [ "${_base}" = "-h" -o "${_base}" = "--help" -o "${_base}" = "-help" ]
+    then
+        echo "${_usage}"
+        exit 1
     fi
 
     shift
@@ -404,7 +421,7 @@ create_instance() {
         _err "Invalid _instance_id: ${_instance_id}"
     fi
 
-    local _jail_ipv6_suffix=$(get_ipv6_suffix "$_instance_id")
+    local _ipv6_suffix=$(get_ipv6_suffix "$_instance_id")
 
     # Clone base
     _check /sbin/zfs clone \""${_latest}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
@@ -414,7 +431,7 @@ create_instance() {
     
     local _site=""
     local _jail_params=""
-    local _hostname=""
+    local _hostname="${_instance_id}"
     local _autostart="off"
 
     if [ -f "${ZJAIL_CONFIG}/site.conf" ]
@@ -422,7 +439,7 @@ create_instance() {
         _site="$(_run cat \""${ZJAIL_CONFIG}/site.conf"\")" || _fatal "Site template not found: ${OPTARG}"
     fi
 
-    while getopts "ac:fs:t:j:h:p:r:" _opt; do
+    while getopts "ac:e:fhs:t:j:h:p:r:" _opt; do
         case "${_opt}" in
             a)
                 # Autostart
@@ -432,7 +449,18 @@ create_instance() {
                 # Copy file from host
                 local _host_path="${OPTARG%:*}"
                 local _instance_path="${OPTARG#*:}"
-                _check cp \""${_host_path}"\" \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
+                _check /bin/cp \""${_host_path}"\" \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
+                ;;
+            e)
+                # Copy file from host filtering througfh envsubst(1)
+                if [ ! -x /usr/local/bin/envsubst ] 
+                then
+                    _fatal "/usr/local/bin/envsubst not found (install gettext pkg)"
+                fi
+                local _host_path="${OPTARG%:*}"
+                local _instance_path="${OPTARG#*:}"
+                _check ID=\""${_instance_id}"\" HOSTNAME=\""${_hostname}"\" SUFFIX=\""${_ipv6_suffix}"\" \
+                    envsubst \< \""${_host_path}"\" \> \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
                 ;;
             f)
                 # Initialise firstboot_zjail rc.d script (execs files in /var/firstboot_zjail)
@@ -486,6 +514,9 @@ create_instance() {
                 # Run sysrc
                 _check /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/sysrc \""${OPTARG}"\"
                 ;;
+            h)
+                _fatal "Usage: ${_usage}"
+                ;;
             \?)
                 _fatal "Usage: ${_usage}"
                 ;;
@@ -495,15 +526,10 @@ create_instance() {
         esac
     done
 
-    if [ -z "${_hostname}" ]
-    then
-        _hostname="${_instance_id}"
-    fi
-
     _check /sbin/zfs set zjail:id=\""${_instance_id}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:hostname=\""${_hostname}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:base=\""${_latest}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
-    _check /sbin/zfs set zjail:suffix=\""${_jail_ipv6_suffix}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
+    _check /sbin/zfs set zjail:suffix=\""${_ipv6_suffix}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:autostart=\""${_autostart}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
 
     local _jail_conf="\
@@ -512,7 +538,7 @@ ${_site}
 ${_instance_id} {
     \$id = ${_instance_id};
     \$hostname = \""${_hostname}"\";
-    \$suffix = ${_jail_ipv6_suffix};
+    \$suffix = ${_ipv6_suffix};
     \$root = \""${ZJAIL_RUN}/${_instance_id}"\";
     path = \""${ZJAIL_RUN}/${_instance_id}"\";
     host.hostname = \""${_hostname}"\";
@@ -526,7 +552,7 @@ ${_instance_id} {
     _check /sbin/zfs snapshot \""${ZJAIL_RUN_DATASET}/${_instance_id}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
     _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -c ${_instance_id}"
 
-    printf 'ID: %s\nSuffix: %s\n' $_instance_id $_jail_ipv6_suffix
+    printf 'ID: %s\nSuffix: %s\n' $_instance_id $_ipv6_suffix
 }
 
 list_instances() {
