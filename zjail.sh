@@ -286,7 +286,8 @@ chroot_base() {
     else
         _run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" env PS1=\""${_name} > "\" /bin/sh
     fi
-    # _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
+
+    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
 clone_base() {
@@ -333,18 +334,18 @@ get_latest_snapshot() {
 
 # Generate random 64-bit ID as 13 character base32 encoded string
 gen_id() {
-    # Get 2 x 32 bit unsigned ints from /dev/urandom
-    # (od doesnt accept -t u8 so we multiply in bc)
-    set -- $(od -v -An -N8 -t u4 /dev/urandom)
-    # Reserve ::0 to ::ffff for system
-    while [ ${1:-0} -eq 0 -a ${2:-0} -lt 65536 ]
-    do
-        set -- $(od -v -An -N8 -t u4 /dev/urandom)
-    done
-    # Ensure id is not all-numeric (invalid jail name) - probability is very low (c. 2.6e-07) but check anyway
     local _id="0000000000000"
+    # Ensure id is not all-numeric (invalid jail name) 
     while expr "${_id}" : '^[0-9]*$' >/dev/null
     do
+        # Get 2 x 32 bit unsigned ints from /dev/urandom
+        # (od doesnt accept -t u8 so we multiply in bc)
+        set -- $(od -v -An -N8 -t u4 /dev/urandom)
+        # Reserve ::0 to ::ffff for system
+        while [ ${1:-0} -eq 0 -a ${2:-0} -lt 65536 ]
+        do
+            set -- $(od -v -An -N8 -t u4 /dev/urandom)
+        done
         # Use bc to generate pseudo-base32 encoded string from 64bit uint
         # (Note this isnt a normal base32 and just uses fixed 13 chars (13*5 = 65))
         _id="$(bc -l -e "x = $1 * $2" \
@@ -613,7 +614,7 @@ destroy_instance() {
     _silent /usr/sbin/jls -j "${_instance_id}" jid && \
         _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -r ${_instance_id}"
     # Wait for jail to stop
-    while jls -dj "${_instance_id}" >/dev/null 2>&1
+    while _run jls -dj "${_instance_id}" \>/dev/null 2\>\&1
     do
         sleep 0.5
     done
