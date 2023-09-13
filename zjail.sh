@@ -355,6 +355,13 @@ gen_id() {
     printf '%s\n' "${_id}"
 }
 
+# Generate random loopback address (note this only has 24 bits of entropy
+# though in practice this isnt a major problem as we only use to separate
+# loopback devices)
+gen_lo() {
+    /usr/bin/printf '127.%d.%d.%d\n' $(/usr/bin/od -v -An -N3 -t u1 /dev/urandom)
+}
+
 # Generate 64-bit IPv6 suffix from pseudo-base32 ID
 get_ipv6_suffix() {
     printf '%04x:%04x:%04x:%04x\n' $(
@@ -416,12 +423,13 @@ create_instance() {
     
     # Generate random 64-bit jail_id and IPv6 suffix
     local _instance_id="$(_run gen_id)"
-    if [ ${#_instance_id} -ne 13 ]
+    if [ ${#_instance_id} -ne 13 ] # should be 13 chars
     then
         _err "Invalid _instance_id: ${_instance_id}"
     fi
 
-    local _ipv6_suffix=$(get_ipv6_suffix "$_instance_id")
+    local _ipv4_lo="$(_run gen_lo)"
+    local _ipv6_suffix="$(_run get_ipv6_suffix \""$_instance_id"\")"
 
     # Clone base
     _check /sbin/zfs clone \""${_latest}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
@@ -439,7 +447,7 @@ create_instance() {
         _site="$(_run cat \""${ZJAIL_CONFIG}/site.conf"\")" || _fatal "Site template not found: ${OPTARG}"
     fi
 
-    while getopts "ac:e:fhs:t:j:h:p:r:" _opt; do
+    while getopts "ac:e:fh:s:t:j:p:r:" _opt; do
         case "${_opt}" in
             a)
                 # Autostart
@@ -539,6 +547,7 @@ ${_instance_id} {
     \$id = ${_instance_id};
     \$hostname = \""${_hostname}"\";
     \$suffix = ${_ipv6_suffix};
+    \$ipv4_lo = ${_ipv4_lo};
     \$root = \""${ZJAIL_RUN}/${_instance_id}"\";
     path = \""${ZJAIL_RUN}/${_instance_id}"\";
     host.hostname = \""${_hostname}"\";
@@ -569,7 +578,7 @@ list_instance_details() {
         do
             if [ -n "${_header}" ]
             then
-                printf '%-14s %-16s %-19s %-32s %-9s %s\n' ID HOSTNAME SUFFIX BASE AUTOSTART STATUS
+                printf '%-14s %-16s %-19s %-36s %-9s %s\n' ID HOSTNAME SUFFIX BASE AUTOSTART STATUS
                 _header=""
             fi
 
@@ -580,7 +589,7 @@ list_instance_details() {
             else 
                 local _status="NOT RUNNING"
             fi
-            printf '%-14s %-16s %-19s %-32s %-9s %s\n' "${_id}" "${_hostname}" "${_suffix}" "${_base##*/}" "${_autostart}" "${_status}"
+            printf '%-14s %-16s %-19s %-36s %-9s %s\n' "${_id}" "${_hostname}" "${_suffix}" "${_base##*/}" "${_autostart}" "${_status}"
         done 
 }
 
