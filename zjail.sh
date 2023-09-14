@@ -15,10 +15,13 @@ _YELLOW="$(printf "\033[0;33m")"
 _CYAN="$(printf "\033[0;36m")"
 
 _log_cmdline() {
-    local _cmd="$@"
-    printf '%s' "${COLOUR:+${_YELLOW}}" >&2
-    printf '%s [%s]\n' "$(date '+%b %d %T')" "CMD: $_cmd" >&2
-    printf '%s' "${COLOUR:+${_NORMAL}}" >&2
+    if [ -n "$DEBUG" ]
+    then
+        local _cmd="$@"
+        printf '%s' "${COLOUR:+${_YELLOW}}" >&2
+        printf '%s [%s]\n' "$(date '+%b %d %T')" "CMD: $_cmd" >&2
+        printf '%s' "${COLOUR:+${_NORMAL}}" >&2
+    fi
 }
 
 _log() {
@@ -88,12 +91,6 @@ _fatal() {
     printf '%sFATAL: %s%s\n' "${COLOUR:+${_RED}}" "$@" "${COLOUR:+${_NORMAL}}" >&2
     exit 1
 }
-
-_exitf() {
-    printf '%s' "${COLOUR:+${_NORMAL}}" >&2
-}
-
-trap _exitf EXIT
 
 ### ZFS Layout
 #
@@ -227,7 +224,7 @@ update_base() {
     fi
 
     # Update pkg (bootstrap if necessary)
-    
+
     # Make sure /dev/null is available in chroot
     _check /sbin/mount -t devfs -o ruleset=1 devfs \""${ZJAIL_BASE}/${_name}/dev"\"
     _check /sbin/devfs -m \""${ZJAIL_BASE}/${_name}/dev"\" rule -s 2 applyset
@@ -254,7 +251,7 @@ install_firstboot() {
         _fatal "Usage: install_firstboot <base>"
     fi
     _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
-    
+
     # Initialise firstboot_zjail rc.d script (execs files in /var/firstboot_zjail)
     _check /bin/mkdir -p \""${ZJAIL_BASE}/${_name}/var/firstboot_zjail"\"
     _check /bin/mkdir -p \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d"\"
@@ -362,6 +359,12 @@ gen_lo() {
     /usr/bin/printf '127.%d.%d.%d\n' $(/usr/bin/od -v -An -N3 -t u1 /dev/urandom)
 }
 
+# Generate random IPv6 Unique Local Address prefix 
+gen_ula() {
+    # 48-bit ULA address - fdXX:XXXX:XXXX (add /16 subnet id and /64 device address)
+    printf "fd%s:%s%s:%s%s\n" $(od -v -An -N5 -t x1 /dev/urandom)
+}
+
 # Generate 64-bit IPv6 suffix from pseudo-base32 ID
 get_ipv6_suffix() {
     printf '%04x:%04x:%04x:%04x\n' $(
@@ -395,14 +398,15 @@ create_instance() {
     [-e <host_path>:<instance_path>]..  # Copy files filtering through envsubst(1)
     [-p <pkg>]..                        # Install pkg
     [-r <sysrc>]..                      # Set rc.local parameter (through sysrc)
-    [-u <user> <pk>]..                  # Add user/ssh pk
+    [-u <user>:\"<pk>\"]..              # Add user/pk (note: pk needs to be quoted)
+    [-w]                                # Add subsequent users to 'wheel' group
 "
 
     if [ -z "${_base}" ]
     then
         _fatal "Usage: ${_usage}"
     fi
-    
+
     if [ "${_base}" = "-h" -o "${_base}" = "--help" -o "${_base}" = "-help" ]
     then
         echo "${_usage}"
@@ -420,7 +424,7 @@ create_instance() {
     then
         _fatal "Cant find snapshot: ${ZJAIL_BASE}/${_base}"
     fi
-    
+
     # Generate random 64-bit jail_id and IPv6 suffix
     local _instance_id="$(_run gen_id)"
     if [ ${#_instance_id} -ne 13 ] # should be 13 chars
@@ -434,20 +438,27 @@ create_instance() {
     # Clone base
     _check /sbin/zfs clone \""${_latest}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
 
+    # Clean up if we exit with error
+    trap "_run /sbin/zfs destroy -r \"${ZJAIL_RUN_DATASET}/${_instance_id}\"" EXIT
+
     # Delay options processing until after we have created the image dataset so
     # that we can operate on this directly
-    
+
     local _site=""
     local _jail_params=""
     local _hostname="${_instance_id}"
     local _autostart="off"
+    #
+    # Add users to wheel group
+    local _wheel=""
 
     if [ -f "${ZJAIL_CONFIG}/site.conf" ]
     then
         _site="$(_run cat \""${ZJAIL_CONFIG}/site.conf"\")" || _fatal "Site template not found: ${OPTARG}"
     fi
 
-    while getopts "ac:e:fh:s:t:j:p:r:" _opt; do
+
+    while getopts "ac:e:fh:s:t:j:p:r:u:w" _opt; do
         case "${_opt}" in
             a)
                 # Autostart
@@ -465,7 +476,7 @@ create_instance() {
                 then
                     _fatal "/usr/local/bin/envsubst not found (install gettext pkg)"
                 fi
-                local _host_path="${OPTARG%:*}"
+                local _host_path="${OPTARG%%:*}"
                 local _instance_path="${OPTARG#*:}"
                 _check ID=\""${_instance_id}"\" HOSTNAME=\""${_hostname}"\" SUFFIX=\""${_ipv6_suffix}"\" \
                     envsubst \< \""${_host_path}"\" \> \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
@@ -522,6 +533,30 @@ create_instance() {
                 # Run sysrc
                 _check /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/sysrc \""${OPTARG}"\"
                 ;;
+            u)
+                # Add user (name:pk)
+                local _name="${OPTARG%%:*}"
+                local _pk="${OPTARG#*:}"
+                local _uid=0
+                local _home="/root"
+                # Check if user exists
+                if ! _silent /usr/sbin/pw -R \""${ZJAIL_RUN}/${_instance_id}"\" usershow -n \""${_name}"\"
+                then
+                    # Create user
+                    _check /usr/sbin/pw -R \""${ZJAIL_RUN}/${_instance_id}"\" useradd -n \""${_name}"\" -m -s /bin/sh -h - ${_wheel}
+                fi
+                _uid=$(_run /usr/sbin/pw -R \""${ZJAIL_RUN}/${_instance_id}"\" usershow -n \""${_name}"\" \| awk -F: "'{ print \$3 }'")
+                _home=$(_run /usr/sbin/pw -R \""${ZJAIL_RUN}/${_instance_id}"\" usershow -n \""${_name}"\" \| awk -F: "'{ print \$9 }'")
+                _check /bin/mkdir -p -m 700 \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh\"
+                _check /usr/bin/printf "'%s\n'" \""${_pk}"\" \>\> \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys\"
+                # We assume uid == gid
+                _check /usr/sbin/chown -R \""${_uid}:${_uid}"\" \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh\" 
+                _check /bin/chmod 600 \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys\" 
+                ;;
+            w)
+                # Add subsequent users to the wheel group
+                _wheel="-G wheel"
+                ;;
             h)
                 _fatal "Usage: ${_usage}"
                 ;;
@@ -538,6 +573,7 @@ create_instance() {
     _check /sbin/zfs set zjail:hostname=\""${_hostname}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:base=\""${_latest}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:suffix=\""${_ipv6_suffix}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
+    _check /sbin/zfs set zjail:loopback=\""${_ipv4_lo}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:autostart=\""${_autostart}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
 
     local _jail_conf="\
@@ -559,9 +595,17 @@ ${_instance_id} {
     /sbin/zfs set zjail:conf="${_jail_conf}" "${ZJAIL_RUN_DATASET}/${_instance_id}" || _fatal "Cant set zjail:conf property"
 
     _check /sbin/zfs snapshot \""${ZJAIL_RUN_DATASET}/${_instance_id}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
-    _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -c ${_instance_id}"
 
-    printf 'ID: %s\nSuffix: %s\n' $_instance_id $_ipv6_suffix
+    local _jail_verbose=""
+    if [ -n "$DEBUG" ]
+    then
+        _jail_verbose="-v"
+    fi
+
+    _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail ${_jail_verbose} -f - -c ${_instance_id} >&2"
+
+    trap - EXIT
+    printf '%s\n' $_instance_id 
 }
 
 list_instances() {
@@ -597,7 +641,7 @@ edit_jail_conf() {
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
-        _fatal "Usage: $0 <instance>"
+        _fatal "Usage: $0 edit_jail_conf <instance>"
     fi
 
     # Check we have a valid instance
@@ -616,44 +660,94 @@ start_instance() {
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
-        _fatal "Usage: $0 <instance>"
+        _fatal "Usage: $0 start_instance <instance>"
     fi
 
     # Check we have a valid instance
     _silent /sbin/zfs get -H -o value zjail:id \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" || _fatal "INSTANCE [${_instance_id}] not found"
     _silent /usr/sbin/jls -j "${_instance_id}" jid && _fatal "INSTANCE [${_instance_id}] running"
-    _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -c ${_instance_id}"
+
+    local _jail_verbose=""
+    if [ -n "${DEBUG}" ]
+    then
+        _jail_verbose="-v"
+    fi
+
+    _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail ${_jail_verbose} -f - -c ${_instance_id} >&2"
 }
 
 stop_instance() {
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
-        _fatal "Usage: $0 <instance>"
+        _fatal "Usage: $0 stop_instance <instance>"
     fi
 
     _silent /sbin/zfs get -H -o value zjail:id \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" || _fatal "INSTANCE [${_instance_id}] not found"
     _silent /usr/sbin/jls -j "${_instance_id}" jid || _fatal "INSTANCE [${_instance_id}] not running"
-    _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -r ${_instance_id}"
+
+    local _jail_verbose=""
+    if [ -n "${DEBUG}" ]
+    then
+        _jail_verbose="-v"
+    fi
+
+    _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail ${_jail_verbose} -f - -r ${_instance_id} >&2"
 }
 
 destroy_instance() {
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
-        _fatal "Usage: $0 <instance>"
+        _fatal "Usage: $0 destroy_instance <instance>"
     fi
 
     _silent /sbin/zfs get -H -o value zjail:id \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" || _fatal "INSTANCE [${_instance_id}] not found"
+
+    local _jail_verbose=""
+    if [ -n "${DEBUG}" ]
+    then
+        _jail_verbose="-v"
+    fi
+
     # XXX Check for -f flag before shutting down
     _silent /usr/sbin/jls -j "${_instance_id}" jid && \
-        _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -r ${_instance_id}"
+        _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail ${_jail_verbose} -f - -r ${_instance_id} >&2"
+
     # Wait for jail to stop
     while _run jls -dj "${_instance_id}" \>/dev/null 2\>\&1
     do
         sleep 0.5
     done
     _check /sbin/zfs destroy -r \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
+}
+
+set_autostart() {
+    local _instance_id="${1:-}"
+    if [ -z "${_instance_id}" ]
+    then
+        _fatal "Usage: $0 set_autostart <instance>"
+    fi
+
+    # Check we have a valid instance
+    _silent /sbin/zfs get -H -o value zjail:id \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" || _fatal "INSTANCE [${_instance_id}] not found"
+
+    # Set autostart flag
+    _check /sbin/zfs set zjail:autostart=\"on\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
+}
+
+clear_autostart() {
+    local _instance_id="${1:-}"
+    if [ -z "${_instance_id}" ]
+    then
+        _fatal "Usage: $0 clear_autostart <instance>"
+    fi
+
+    # Check we have a valid instance
+    _silent /sbin/zfs get -H -o value zjail:id \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" || _fatal "INSTANCE [${_instance_id}] not found"
+
+    # Set autostart flag
+    _check /sbin/zfs set zjail:autostart=\"off\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
 }
 
 autostart() {
