@@ -15,6 +15,7 @@ _YELLOW="$(printf "\033[0;33m")"
 _CYAN="$(printf "\033[0;36m")"
 
 _log_cmdline() {
+    # Log command line if DEBUG set (optionally in colour)
     if [ -n "$DEBUG" ]
     then
         local _cmd="$@"
@@ -187,7 +188,11 @@ fetch_release() {
 ### Manage bases
 
 create_base() {
-    local _name="${1:-${OS_RELEASE}}"
+    local _name="${1:-}"
+    if [ -z "${_name}" ]
+    then
+        _fatal "Usage: create_base <name> [os_release]"
+    fi
     local _release="${2:-${OS_RELEASE}}"
     _silent /bin/test -d \""${ZJAIL_BASE}"\" || _fatal "ZJAIL_BASE [${ZJAIL_BASE}] not found"
     _silent /bin/test -d \""${ZJAIL_DIST}/${_release}"\" || _fatal "RELEASE [${ZJAIL_DIST}/${_release}] not found"
@@ -201,6 +206,7 @@ create_base() {
 }
 
 update_base() {
+
     local _name="${1:-}"
     if [ -z "${_name}" ]
     then
@@ -208,40 +214,84 @@ update_base() {
     fi
     _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
 
+    # Get primary ipv4/ipv6 addresses - we check default route and 1.1.1.1 / ::/1 in case we have wireguard tunnel
+    local _ipv4_default="$(ifconfig $(sh -c "route -n get default || route -n get 1.1.1.1" 2>/dev/null | awk '/interface:/ { print $2 }') | awk '/inet/ { print $2; exit }')"
+    local _ipv6_default="$(ifconfig $(sh -c "route -6n get default || route -6n get ::/1" 2>/dev/null | awk '/interface:/ { print $2 }') | awk '/inet6/ { print $2; exit }')"
+    local _jail_ip=""
+    if [ -n "${_ipv4_default}" ]
+    then
+        _jail_ip="ip4.addr=${_ipv4_default}"
+    fi
+    if [ -n "${_ipv6_default}" ]
+    then
+        _jail_ip="${_jail_ip} ip6.addr=${_ipv6_default}"
+    fi
+    if [ -z "${_jail_ip}" ] 
+    then
+        _fatal "Cant find ipv4/ipv6 default addresses"
+    fi
+    
     # Copy local resolv.conf
+    if [ -f "${ZJAIL_BASE}/${_name}/etc/resolv.conf" ]
+    then
+        _check /bin/cp \""${ZJAIL_BASE}/${_name}/etc/resolv.conf"\" \""${ZJAIL_BASE}/${_name}/etc/resolv.conf.orig"\"
+    fi
     _check /bin/cp /etc/resolv.conf \""${ZJAIL_BASE}/${_name}/etc/resolv.conf"\"
 
-    # Run freebsd-update in chroot
-    local _version=$(_run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /bin/freebsd-version) || _fatal "Cant get freebsd-version"
-    _check PAGER=\""/usr/bin/tail -n0"\" /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" \
-        /usr/sbin/freebsd-update --currently-running \""${_version}"\" --not-running-from-cron fetch
-    _log /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" \
-        /usr/sbin/freebsd-update --not-running-from-cron updatesready
-    if [ $? -eq 0 ]
-    then
-        _check PAGER=/bin/cat /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" \
-            /usr/sbin/freebsd-update --not-running-from-cron install
-    fi
+    # Run freebsd-update in jail
+    _check /usr/sbin/jail -vc path=\""${ZJAIL_BASE}/${_name}"\" mount.devfs devfs_ruleset=4 ${_jail_ip} exec.clean command /bin/sh <<'EOM'
+set -o errexit
+set -o pipefail
+set -o nounset
+PAGER="/usr/bin/tail -n0" /usr/sbin/freebsd-update --currently-running $(/bin/freebsd-version) --not-running-from-cron fetch
+if /usr/sbin/freebsd-update updatesready
+then
+    PAGER=/bin/cat /usr/sbin/freebsd-update install
+fi
+if ! /usr/sbin/pkg -N
+then
+    ASSUME_ALWAYS_YES=YES /usr/sbin/pkg bootstrap
+fi
+/usr/sbin/pkg update
+/usr/sbin/pkg upgrade
+if [ -f /etc/resolv.conf.orig ]
+then
+    mv /etc/resolv.conf.orig /etc/resolv.conf
+fi
+EOM
 
-    # Update pkg (bootstrap if necessary)
-
-    # Make sure /dev/null is available in chroot
-    _check /sbin/mount -t devfs -o ruleset=1 devfs \""${ZJAIL_BASE}/${_name}/dev"\"
-    _check /sbin/devfs -m \""${ZJAIL_BASE}/${_name}/dev"\" rule -s 2 applyset
-
-    _log /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg -N
-    if [ $? -ne 0 ]
-    then
-        _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg bootstrap
-    fi
-    _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg update
-    _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/pkg upgrade
-
-    # Unmount devfs
-    _check /sbin/umount \""${ZJAIL_BASE}/${_name}/dev"\"
+    # jail -c doesnt appear to unmount devfs for non-persistent jails on clean exit so umount manually
+    _check /sbin/umount -f \""${ZJAIL_BASE}/${_name}/dev"\"
 
     # Create snapshot
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
+}
+
+jexec_base() {
+    
+    # Create temporary jail and run /bin/sh
+
+    local _name="${1:-}"
+    if [ -z "${_name}" ]
+    then
+        _fatal "Usage: jail_base <base> [jail_params].."
+    fi
+    _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+
+    shift
+    if [ "$#" -gt 0 ]
+    then
+        _run /usr/sbin/jail -c path=\""${ZJAIL_BASE}/${_name}"\" mount.devfs devfs_ruleset=4 exec.clean "$@" command /bin/sh
+    else
+        _run /usr/sbin/jail -c path=\""${ZJAIL_BASE}/${_name}"\" mount.devfs devfs_ruleset=4 exec.clean command /bin/sh
+    fi
+
+    # jail -c doesnt appear to unmount devfs for non-persistent jails on clean exit so umount manually
+    _check /sbin/umount -f \""${ZJAIL_BASE}/${_name}/dev"\"
+
+    # Create snapshot
+    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
+
 }
 
 install_firstboot() {
@@ -266,25 +316,6 @@ install_firstboot() {
     # Create snapshot
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 
-}
-
-chroot_base() {
-    local _name="${1:-}"
-    if [ -z "${_name}" ]
-    then
-        _fatal "Usage: chroot_base <base>"
-    fi
-    _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
-
-    shift
-    if [ "$#" -gt 0 ]
-    then
-        _run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" $@
-    else
-        _run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" env PS1=\""${_name} > "\" /bin/sh
-    fi
-
-    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
 clone_base() {
