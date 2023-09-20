@@ -206,7 +206,6 @@ create_base() {
 }
 
 update_base() {
-
     local _name="${1:-}"
     if [ -z "${_name}" ]
     then
@@ -239,7 +238,7 @@ update_base() {
     _check /bin/cp /etc/resolv.conf \""${ZJAIL_BASE}/${_name}/etc/resolv.conf"\"
 
     # Run freebsd-update in jail
-    _check /usr/sbin/jail -vc path=\""${ZJAIL_BASE}/${_name}"\" mount.devfs devfs_ruleset=4 ${_jail_ip} exec.clean command /bin/sh <<'EOM'
+    jexec_base "${_name}" ${_jail_ip} <<'EOM'
 set -o errexit
 set -o pipefail
 set -o nounset
@@ -260,17 +259,10 @@ then
 fi
 EOM
 
-    # jail -c doesnt appear to unmount devfs for non-persistent jails on clean exit so umount manually
-    _check /sbin/umount -f \""${ZJAIL_BASE}/${_name}/dev"\"
-
-    # Create snapshot
-    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
 jexec_base() {
-    
     # Create temporary jail and run /bin/sh
-
     local _name="${1:-}"
     if [ -z "${_name}" ]
     then
@@ -291,7 +283,25 @@ jexec_base() {
 
     # Create snapshot
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
+}
 
+chroot_base() {
+    local _name="${1:-}"
+    if [ -z "${_name}" ]
+    then
+        _fatal "Usage: chroot_base <base> [cmd].."
+    fi
+    _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+
+    shift
+    if [ "$#" -gt 0 ]
+    then
+        _run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" "$@"
+    else
+        _run /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" env PS1=\""${_name} > "\" /bin/sh
+    fi
+
+    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
 install_firstboot() {
@@ -600,12 +610,19 @@ create_instance() {
         esac
     done
 
+
+
     _check /sbin/zfs set zjail:id=\""${_instance_id}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:hostname=\""${_hostname}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:base=\""${_latest}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:suffix=\""${_ipv6_suffix}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:loopback=\""${_ipv4_lo}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:autostart=\""${_autostart}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
+
+    if [ -z "${_site}" ]
+    then
+        _fatal "No site config"
+    fi
 
     local _jail_conf="\
 ${_site}
