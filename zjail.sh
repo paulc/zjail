@@ -124,31 +124,36 @@ ZJAIL_CONFIG="/${ZJAIL}/config"
 
 DIST_SRC="${DIST_SRC:-http://ftp.freebsd.org/pub/FreeBSD/releases/}"
 
-### firstboot_zjail rc.d script
-_firstboot_zjail='
+### firstboot_exec rc.d script
+_firstboot_exec='
 #!/bin/sh
 
 # KEYWORD: firstboot
-# PROVIDE: firstboot_zjail
+# PROVIDE: firstboot_exec
 # REQUIRE: NETWORKING
 # BEFORE: LOGIN
 
 . /etc/rc.subr
 
-: ${firstboot_zjail_enable:="NO"}
+: ${firstboot_exec:="NO"}
+: ${firstboot_exec_reboot:="NO"}
 
-name="firstboot_zjail"
-rcvar="firstboot_zjail_enable"
-start_cmd="firstboot_zjail_run"
+name="firstboot_exec"
+rcvar="firstboot_exec"
+start_cmd="firstboot_exec"
 
-firstboot_zjail_run() {
-    printf "Running firstboot_zjail scripts:\n"
-    for x in $(ls /var/firstboot_zjail)
+firstboot_exec() {
+    printf "Running firstboot_exec scripts:\n"
+    for x in $(ls /var/firstboot_exec.d)
     do
-        printf "/var/firstboot_zjail/$x:"
-        /bin/sh "/var/firstboot_zjail/$x"
-        printf "\n"
+        printf "/var/firstboot_exec.d/$x:"
+        /bin/sh "/var/firstboot_exec.d/$x"
     done
+
+    if checkyesno firstboot_exec_reboot; then
+        printf "Requesting reboot."
+        touch ${firstboot_sentinel}-reboot
+    fi
 }
 
 load_rc_config $name
@@ -304,7 +309,7 @@ chroot_base() {
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
-install_firstboot() {
+install_firstboot_exec() {
     local _name="${1:-}"
     if [ -z "${_name}" ]
     then
@@ -312,16 +317,16 @@ install_firstboot() {
     fi
     _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
 
-    # Initialise firstboot_zjail rc.d script (execs files in /var/firstboot_zjail)
-    _check /bin/mkdir -p \""${ZJAIL_BASE}/${_name}/var/firstboot_zjail"\"
+    # Initialise firstboot_exec rc.d script (execs files in /var/firstboot_exec.d)
+    _check /bin/mkdir -p \""${ZJAIL_BASE}/${_name}/var/firstboot_exec.d"\"
     _check /bin/mkdir -p \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d"\"
-    if ! /bin/echo "${_firstboot_zjail}" | _silent /usr/bin/tee -a \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_zjail"\"
+    if ! /bin/echo "${_firstboot_exec}" | _silent /usr/bin/tee -a \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_exec"\"
     then
-        _fatal "Cant write ${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_zjail"
+        _fatal "Cant write ${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_exec"
     fi
-    _check /bin/chmod 755 \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_zjail"\"
+    _check /bin/chmod 755 \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_exec"\"
     _check /usr/bin/touch \""${ZJAIL_BASE}/${_name}/firstboot"\"
-    _check /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/sysrc firstboot_zjail_enable=YES
+    _check /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/sysrc firstboot_exec_enable=YES
 
     # Create snapshot
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
@@ -741,6 +746,9 @@ stop_instance() {
     fi
 
     _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail ${_jail_verbose} -f - -r ${_instance_id} >&2"
+
+    # Cleanup any mounts 
+    cleanup_mounts "${_instance_id}"
 }
 
 destroy_instance() {
@@ -760,7 +768,10 @@ destroy_instance() {
 
     # XXX Check for -f flag before shutting down
     _silent /usr/sbin/jls -j "${_instance_id}" jid && \
-        _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail ${_jail_verbose} -f - -r ${_instance_id} >&2"
+        _log "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail ${_jail_verbose} -f - -r ${_instance_id} >&2"
+
+    # Cleanup any mounts 
+    cleanup_mounts "${_instance_id}"
 
     # Wait for jail to stop
     while _run jls -dj "${_instance_id}" \>/dev/null 2\>\&1
@@ -808,6 +819,17 @@ autostart() {
             _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail -vf - -c ${_instance_id}"
         fi
     done
+}
+
+cleanup_mounts() {
+    local _instance_id="${1:-}"
+    if [ -z "${_instance_id}" ]
+    then
+        _fatal "Usage: $0 cleanup_mounts <instance>"
+    fi
+
+    # Need to deal with possible spaces in mount point so we use libxo XML output
+    _run "/sbin/mount -t nozfs --libxo xml,pretty | awk -F '<|>' -v id=${_instance_id} '\$3 ~ id { system(sprintf(\"/sbin/umount -f \\\"%s\\\"\",\$3)) }'"
 }
 
 cmd="${1}"
