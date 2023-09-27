@@ -177,7 +177,7 @@ create_zfs_datasets () {
 fetch_release() {
     local _release="${1:-${OS_RELEASE}}"
     _silent /bin/test -d \""${ZJAIL_DIST}"\" || _fatal "ZJAIL_DIST [${ZJAIL_DIST}] not found"
-    _check /bin/mkdir \""${ZJAIL_DIST}/${_release}"\"
+    _check /sbin/zfs create -p \""${ZJAIL_DIST_DATASET}/${_release}"\"
     if [ "${ARCH}" = "amd64" ]
     then
         local _sets="base.txz lib32.txz"
@@ -186,8 +186,10 @@ fetch_release() {
     fi
     for _f in $_sets
     do
-        _check /usr/bin/fetch -o \""${ZJAIL_DIST}/${_release}/${_f}"\" \""${DIST_SRC}/${ARCH}/${_release}/${_f}"\"
+        _check /usr/bin/fetch -o - \""${DIST_SRC}/${ARCH}/${_release}/${_f}"\" \| /usr/bin/tar -C \""${ZJAIL_DIST}/${_release}"\" -xf -
     done
+    _check /sbin/zfs snapshot \""${ZJAIL_DIST_DATASET}/${_release}@release"\"
+    _check /sbin/zfs set readonly=on \""${ZJAIL_DIST_DATASET}/${_release}"\"
 }
 
 ### Manage bases
@@ -200,13 +202,11 @@ create_base() {
     fi
     local _release="${2:-${OS_RELEASE}}"
     _silent /bin/test -d \""${ZJAIL_BASE}"\" || _fatal "ZJAIL_BASE [${ZJAIL_BASE}] not found"
-    _silent /bin/test -d \""${ZJAIL_DIST}/${_release}"\" || _fatal "RELEASE [${ZJAIL_DIST}/${_release}] not found"
     _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" && _fatal "BASE [${ZJAIL_BASE}/${_name}] exists"
-    _check /sbin/zfs create -p \""${ZJAIL_BASE_DATASET}/${_name}"\"
-    for _f in "${ZJAIL_DIST}/${_release}"/*.txz
-    do
-        _check /usr/bin/tar -C \""${ZJAIL_BASE}/${_name}"\" -xf \""${_f}"\"
-    done
+    _silent /sbin/zfs list -o name -H \""${ZJAIL_DIST_DATASET}/${_release}@release"\" || _fatal "RELEASE [${_release}] not found"
+    _check /sbin/zfs clone \""${ZJAIL_DIST_DATASET}/${_release}@release"\" \""${ZJAIL_BASE_DATASET}/${_name}"\"
+    _check /sbin/zfs set zjail:release=\""${_release}"\" \""${ZJAIL_DIST_DATASET}/${_release}"\"
+    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@release"\"
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
