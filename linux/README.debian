@@ -25,9 +25,8 @@ Add rule to /etc/devfs.rules:
 
 ## Configure base
 
-    ./zjail.sh clone_base 13.2-RELEASE debian
+    ./zjail.sh create_base debian
     ./zjail.sh update_base debian
-
     ./zjail.sh chroot_base debian <<'EOM'
     tee /etc/fstab <<__FSTAB
     devfs           /compat/debian/dev      devfs           rw,late                      0       0
@@ -44,7 +43,11 @@ Add rule to /etc/devfs.rules:
     pkg install -y debootstrap
     debootstrap buster /compat/debian
     chroot /compat/debian /usr/bin/apt update
-    'EOM'
+    # Turn off sendmail & syslog network   
+    sysrc sendmail_enable=NONE
+    sysrc syslogd_flags=-ss
+    sysrc ip6addrctl_policy=ipv6_prefer
+    EOM
 
 # Create instance
 

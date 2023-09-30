@@ -220,7 +220,7 @@ update_base() {
 
     # Get primary ipv4/ipv6 addresses - we check default route and 1.1.1.1 / ::/1 in case we have wireguard tunnel
     local _ipv4_default="$(ifconfig $(sh -c "route -n get default || route -n get 1.1.1.1" 2>/dev/null | awk '/interface:/ { print $2 }') | awk '/inet/ { print $2; exit }')"
-    local _ipv6_default="$(ifconfig $(sh -c "route -6n get default || route -6n get ::/1" 2>/dev/null | awk '/interface:/ { print $2 }') | awk '/inet6/ { print $2; exit }')"
+    local _ipv6_default="$(ifconfig $(sh -c "route -6n get default || route -6n get ::/1" 2>/dev/null | awk '/interface:/ { print $2 }') | awk '/inet6/ && ! /fe80::/ { print $2; exit }')"
     local _jail_ip=""
     if [ -n "${_ipv4_default}" ]
     then
