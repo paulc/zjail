@@ -210,6 +210,14 @@ create_base() {
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
+get_default_ipv4() {
+    ifconfig $(sh -c "route -n get default || route -n get 1.1.1.1" 2>/dev/null | awk '/interface:/ { print $2 }') inet | awk '/inet/ { print $2; exit }'
+}
+
+get_default_ipv6() {
+    ifconfig $(sh -c "route -6n get default || route -6n get ::/1" 2>/dev/null | awk '/interface:/ { print $2 }') inet6 | awk '/inet6/ && ! /fe80::/ { print $2; exit }'
+}
+
 update_base() {
     local _name="${1:-}"
     if [ -z "${_name}" ]
@@ -219,8 +227,8 @@ update_base() {
     _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
 
     # Get primary ipv4/ipv6 addresses - we check default route and 1.1.1.1 / ::/1 in case we have wireguard tunnel
-    local _ipv4_default="$(ifconfig $(sh -c "route -n get default || route -n get 1.1.1.1" 2>/dev/null | awk '/interface:/ { print $2 }') | awk '/inet/ { print $2; exit }')"
-    local _ipv6_default="$(ifconfig $(sh -c "route -6n get default || route -6n get ::/1" 2>/dev/null | awk '/interface:/ { print $2 }') | awk '/inet6/ && ! /fe80::/ { print $2; exit }')"
+    local _ipv4_default="$(get_default_ipv4)"
+    local _ipv6_default="$(get_default_ipv6)"
     local _jail_ip=""
     if [ -n "${_ipv4_default}" ]
     then
