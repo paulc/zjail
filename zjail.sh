@@ -440,6 +440,21 @@ get_ipv6_suffix() {
         ')
 }
 
+# Increment counter from file
+increment_counter() {
+    local _file="${1:-}"
+    if [ -z "${_file}" ]
+    then
+        _fatal "Usage: increment_counter <file>"
+    fi
+
+    /usr/bin/lockf -k -s -t 2 "${_file}.lock" /bin/sh -eu <<EOM
+NEXT=\$(( \$(cat "${_file}" 2>/dev/null || echo 0) + 1 ))
+echo \$NEXT | tee "${_file}"
+EOM
+
+}
+
 create_instance() {
     local _base="${1:-}"
     local _usage="$0 create_instance
@@ -481,6 +496,13 @@ create_instance() {
 
     # Generate random 64-bit jail_id and IPv6 suffix
     local _instance_id="$(_run gen_id)"
+
+    # Check for ID collisions
+    while _silent /bin/test -d \""${ZJAIL_RUN}/${_instance_id}"\"
+    do
+        _instance_id="$(_run gen_id)"
+    done
+
     if [ ${#_instance_id} -ne 13 ] # should be 13 chars
     then
         _err "Invalid _instance_id: ${_instance_id}"
