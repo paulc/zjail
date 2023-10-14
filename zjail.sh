@@ -510,6 +510,7 @@ create_instance() {
 
     local _ipv4_lo="$(_run gen_lo)"
     local _ipv6_suffix="$(_run get_ipv6_suffix \""$_instance_id"\")"
+    local _counter="$(_run increment_counter \""$ZJAIL_CONFIG/.counter"\")"
 
     # Clone base
     _check /sbin/zfs clone \""${_latest}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
@@ -653,6 +654,7 @@ create_instance() {
     _check /sbin/zfs set zjail:suffix=\""${_ipv6_suffix}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:loopback=\""${_ipv4_lo}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:autostart=\""${_autostart}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
+    _check /sbin/zfs set zjail:counter=\""${_counter}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
 
     if [ -z "${_site}" ]
     then
@@ -667,6 +669,7 @@ ${_instance_id} {
     \$hostname = \""${_hostname}"\";
     \$suffix = ${_ipv6_suffix};
     \$ipv4_lo = ${_ipv4_lo};
+    \$counter = ${_counter};
     \$root = \""${ZJAIL_RUN}/${_instance_id}"\";
     path = \""${ZJAIL_RUN}/${_instance_id}"\";
     host.hostname = \""${_hostname}"\";
