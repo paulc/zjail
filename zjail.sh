@@ -459,18 +459,16 @@ create_instance() {
     local _base="${1:-}"
     local _usage="$0 create_instance
     [-a]                                # Set sutostart flag
-    [-f]                                # Initialise firstboot rc.d script
+    [-c <site_config>]                  # Set jail.conf template
+    [-C <host_path>:<instance_path>]..  # Copy files from host to instance
     [-h <hostname>]                     # Set hostname
-    [-s <site_template>]                # Set site jail.conf template
     [-j <jail_param>]..                 # Set jail parameters
-    [-c <host_path>:<instance_path>]..  # Copy files from host to instance
-    [-e <host_path>:<instance_path>]..  # Copy files filtering through envsubst(1)
     [-p <pkg>]..                        # Install pkg
-    [-r <sysrc>]..                      # Set rc.local parameter (through sysrc)
+    [-s <sysrc>]..                      # Set rc.local parameter (through sysrc)
+    [-S <host_path>:<instance_path>]..  # Copy files filtering through envsubst(1)
     [-u <user>:\"<pk>\"]..              # Add user/pk (note: pk needs to be quoted)
     [-w]                                # Add subsequent users to 'wheel' group
 "
-
     if [ -z "${_base}" ]
     then
         _fatal "Usage: ${_usage}"
@@ -535,48 +533,37 @@ create_instance() {
     fi
 
 
-    while getopts "ac:e:fh:s:t:j:p:r:u:w" _opt; do
+    while getopts "ac:C:h:j:p:s:S:u:w" _opt; do
         case "${_opt}" in
             a)
                 # Autostart
                 _autostart="on"
                 ;;
             c)
+                # Set site config
+                _site="$(_run cat \""${OPTARG}"\")" || _fatal "Site config not found: ${OPTARG}"
+                ;;
+            C)
                 # Copy file from host
                 local _host_path="${OPTARG%:*}"
                 local _instance_path="${OPTARG#*:}"
                 _check /bin/cp \""${_host_path}"\" \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
                 ;;
-            e)
-                # Copy file from host filtering througfh envsubst(1)
-                if [ ! -x /usr/local/bin/envsubst ] 
-                then
-                    _fatal "/usr/local/bin/envsubst not found (install gettext pkg)"
-                fi
-                local _host_path="${OPTARG%%:*}"
-                local _instance_path="${OPTARG#*:}"
-                _check ID=\""${_instance_id}"\" HOSTNAME=\""${_hostname}"\" SUFFIX=\""${_ipv6_suffix}"\" \
-                    envsubst \< \""${_host_path}"\" \> \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
-                ;;
-            f)
-                # Initialise firstboot_zjail rc.d script (execs files in /var/firstboot_zjail)
-                _check /bin/mkdir -p \""${ZJAIL_RUN}/${_instance_id}/var/firstboot_zjail"\"
-                _check /bin/mkdir -p \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d"\"
-                if ! /bin/echo "${_firstboot_zjail}" | _silent /usr/bin/tee -a \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"\"
-                then
-                    _fatal "Cant write ${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"
-                fi
-                _check /bin/chmod 755 \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"\"
-                _check /usr/bin/touch \""${ZJAIL_RUN}/${_instance_id}/firstboot"\"
-                _check /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/sysrc firstboot_zjail_enable=YES
-                ;;
+#            f)
+#                # Initialise firstboot_zjail rc.d script (execs files in /var/firstboot_zjail)
+#                _check /bin/mkdir -p \""${ZJAIL_RUN}/${_instance_id}/var/firstboot_zjail"\"
+#                _check /bin/mkdir -p \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d"\"
+#                if ! /bin/echo "${_firstboot_zjail}" | _silent /usr/bin/tee -a \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"\"
+#                then
+#                    _fatal "Cant write ${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"
+#                fi
+#                _check /bin/chmod 755 \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"\"
+#                _check /usr/bin/touch \""${ZJAIL_RUN}/${_instance_id}/firstboot"\"
+#                _check /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/sysrc firstboot_zjail_enable=YES
+#                ;;
             h)
                 # Set hostname
                 _hostname="${OPTARG}"
-                ;;
-            s)
-                # Set site template
-                _site="$(_run cat \""${OPTARG}"\")" || _fatal "Site template not found: ${OPTARG}"
                 ;;
             j)
                 # Add jail param
@@ -595,7 +582,7 @@ create_instance() {
                     _check /bin/cp /etc/resolv.conf \""${ZJAIL_RUN}/${_instance_id}/etc/resolv.conf"\"
                 fi
 
-                # Bootstrap pkg
+                # Bootstrap pkg if needed
                 _log /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/pkg -N
                 if [ $? -ne 0 ]
                 then
@@ -606,9 +593,20 @@ create_instance() {
 
                 _check /sbin/umount \""${ZJAIL_RUN}/${_instance_id}/dev"\"
                 ;;
-            r)
+            s)
                 # Run sysrc
                 _check /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/sysrc \""${OPTARG}"\"
+                ;;
+            S)
+                # Copy file from host filtering througfh envsubst(1)
+                if [ ! -x /usr/local/bin/envsubst ] 
+                then
+                    _fatal "/usr/local/bin/envsubst not found (install gettext pkg)"
+                fi
+                local _host_path="${OPTARG%%:*}"
+                local _instance_path="${OPTARG#*:}"
+                _check ID=\""${_instance_id}"\" HOSTNAME=\""${_hostname}"\" SUFFIX=\""${_ipv6_suffix}"\" \
+                    envsubst \< \""${_host_path}"\" \> \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
                 ;;
             u)
                 # Add user (name:pk)
