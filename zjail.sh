@@ -124,33 +124,32 @@ ZJAIL_CONFIG="/${ZJAIL}/config"
 
 DIST_SRC="${DIST_SRC:-http://ftp.freebsd.org/pub/FreeBSD/releases/}"
 
-### firstboot_exec rc.d script
-_firstboot_exec='
+### firstboot_run rc.d script
+_firstboot_run='
 #!/bin/sh
 
 # KEYWORD: firstboot
-# PROVIDE: firstboot_exec
+# PROVIDE: firstboot_run
 # REQUIRE: NETWORKING
 # BEFORE: LOGIN
 
 . /etc/rc.subr
 
-: ${firstboot_exec:="NO"}
-: ${firstboot_exec_reboot:="NO"}
+: ${firstboot_run:="NO"}
+: ${firstboot_run_reboot:="NO"}
 
-name="firstboot_exec"
-rcvar="firstboot_exec"
-start_cmd="firstboot_exec"
+name="firstboot_run"
+rcvar="firstboot_run_enable"
+start_cmd="firstboot_run"
 
-firstboot_exec() {
-    printf "Running firstboot_exec scripts:\n"
-    for x in $(ls /var/firstboot_exec.d)
+firstboot_run() {
+    printf "Running firstboot_run scripts:\n"
+    for x in $(ls /var/firstboot_run.d)
     do
-        printf "/var/firstboot_exec.d/$x:"
-        /bin/sh "/var/firstboot_exec.d/$x"
+        printf "    /var/firstboot_run.d/$x: %s\n" "$(/bin/sh "/var/firstboot_run.d/$x")"
     done
 
-    if checkyesno firstboot_exec_reboot; then
+    if checkyesno firstboot_run_reboot; then
         printf "Requesting reboot."
         touch ${firstboot_sentinel}-reboot
     fi
@@ -158,6 +157,23 @@ firstboot_exec() {
 
 load_rc_config $name
 run_rc_command "$1"
+'
+
+_update_instance='
+set -o errexit
+set -o pipefail
+set -o nounset
+PAGER="/usr/bin/tail -n0" /usr/sbin/freebsd-update --currently-running $(/bin/freebsd-version) --not-running-from-cron fetch
+if /usr/sbin/freebsd-update updatesready
+then
+    PAGER=/bin/cat /usr/sbin/freebsd-update install
+fi
+if ! /usr/sbin/pkg -N
+then
+    ASSUME_ALWAYS_YES=YES /usr/sbin/pkg bootstrap
+fi
+/usr/sbin/pkg update
+/usr/sbin/pkg upgrade
 '
 
 ### Setup environment
@@ -317,30 +333,6 @@ chroot_base() {
     _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
 }
 
-install_firstboot_exec() {
-    local _name="${1:-}"
-    if [ -z "${_name}" ]
-    then
-        _fatal "Usage: install_firstboot <base>"
-    fi
-    _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
-
-    # Initialise firstboot_exec rc.d script (execs files in /var/firstboot_exec.d)
-    _check /bin/mkdir -p \""${ZJAIL_BASE}/${_name}/var/firstboot_exec.d"\"
-    _check /bin/mkdir -p \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d"\"
-    if ! /bin/echo "${_firstboot_exec}" | _silent /usr/bin/tee -a \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_exec"\"
-    then
-        _fatal "Cant write ${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_exec"
-    fi
-    _check /bin/chmod 755 \""${ZJAIL_BASE}/${_name}/usr/local/etc/rc.d/firstboot_exec"\"
-    _check /usr/bin/touch \""${ZJAIL_BASE}/${_name}/firstboot"\"
-    _check /usr/sbin/chroot \""${ZJAIL_BASE}/${_name}"\" /usr/sbin/sysrc firstboot_exec_enable=YES
-
-    # Create snapshot
-    _check /sbin/zfs snapshot \""${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\"
-
-}
-
 clone_base() {
     local _name="${1:-}"
     local _target="${2:-}"
@@ -379,6 +371,26 @@ get_latest_snapshot() {
     fi
     _silent /bin/test -d \""${ZJAIL_BASE}/${_name}"\" || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
     _run "/sbin/zfs list -H -t snap -s creation -o name \""${ZJAIL_BASE_DATASET}/${_name}"\" | tail -1"
+}
+
+install_firstboot_run() {
+    local _root="${1:-}"
+    if [ -z "${_root}" ]
+    then
+        _fatal "Usage: install_firstboot_run <root>"
+    fi
+    _silent /bin/test -d \""${_root}"\" || _fatal "Root path [${_root}] not found"
+
+    # Initialise firstboot_run rc.d script (execs files in /var/firstboot_run.d)
+    _check /bin/mkdir -p \""${_root}/var/firstboot_run.d"\"
+    _check /bin/mkdir -p \""${_root}/usr/local/etc/rc.d"\"
+    if ! /bin/echo "${_firstboot_run}" | _silent /usr/bin/tee -a \""${_root}/usr/local/etc/rc.d/firstboot_run"\"
+    then
+        _fatal "Cant write ${_root}/usr/local/etc/rc.d/firstboot_run"
+    fi
+    _check /bin/chmod 755 \""${_root}/usr/local/etc/rc.d/firstboot_run"\"
+    _check /usr/bin/touch \""${_root}/firstboot"\"
+    _check /usr/sbin/chroot \""${_root}"\" /usr/sbin/sysrc firstboot_run_enable=YES
 }
 
 ### Instances
@@ -456,41 +468,53 @@ EOM
 }
 
 create_instance() {
-    local _base="${1:-}"
-    local _usage="$0 create_instance
+    local _usage="$0 create_instance <base|release>
     [-a]                                # Set sutostart flag
     [-c <site_config>]                  # Set jail.conf template
     [-C <host_path>:<instance_path>]..  # Copy files from host to instance
     [-h <hostname>]                     # Set hostname
     [-j <jail_param>]..                 # Set jail parameters
     [-p <pkg>]..                        # Install pkg
+    [-r <cmd>]..                        # Run firstboot cmd in instance 
     [-s <sysrc>]..                      # Set rc.local parameter (through sysrc)
     [-S <host_path>:<instance_path>]..  # Copy files filtering through envsubst(1)
-    [-u <user>:\"<pk>\"]..              # Add user/pk (note: pk needs to be quoted)
+    [-u '<user>:<pk>']..                # Add user/pk (note: pk needs to be quoted)
+    [-U]                                # Update instance on firstboot
     [-w]                                # Add subsequent users to 'wheel' group
 "
+    case "${1:-}" in
+        -h|-help|--help|help) _fatal "Usage: ${_usage}"
+        ;;
+    esac
+
+    local _base="${1:-}"
+    shift
+
     if [ -z "${_base}" ]
     then
         _fatal "Usage: ${_usage}"
     fi
 
-    if [ "${_base}" = "-h" -o "${_base}" = "--help" -o "${_base}" = "-help" ]
+    # Check base/release image exists and get latest snapshot
+    local _latest=""
+    if _silent /bin/test -d \""${ZJAIL_BASE}/${_base}"\"
     then
-        echo "${_usage}"
-        exit 1
+        # Base image
+        _latest=$(get_latest_snapshot "${_base}")
+        if [ -z "${_latest}" ]
+        then
+            _fatal "Cant find snapshot: ${ZJAIL_BASE}/${_base}"
+        fi
+    elif _silent /sbin/zfs list -H -o name \""${ZJAIL_DIST_DATASET}/${_base}@release"\"
+    then
+        # Release image
+        _latest="${ZJAIL_DIST_DATASET}/${_base}@release"
+    else 
+        _fatal "BASE/RELEASE image [${_base}] not found"
     fi
 
-    shift
-
-    # Check base image and run mount point exists
-    _silent /bin/test -d \""${ZJAIL_BASE}/${_base}"\" || _fatal "BASE [${ZJAIL_BASE}/${_base}] not found"
+    # Check run mount point exists
     _silent /bin/test -d \""${ZJAIL_RUN}"\" || _fatal "ZJAIL_RUN [${ZJAIL_RUN}] not found"
-
-    local _latest=$(get_latest_snapshot "${_base}")
-    if [ -z "${_latest}" ]
-    then
-        _fatal "Cant find snapshot: ${ZJAIL_BASE}/${_base}"
-    fi
 
     # Generate random 64-bit jail_id and IPv6 suffix
     local _instance_id="$(_run gen_id)"
@@ -523,6 +547,7 @@ create_instance() {
     local _jail_params=""
     local _hostname="${_instance_id}"
     local _autostart="off"
+    local _run_id=0
     #
     # Add users to wheel group
     local _wheel=""
@@ -532,8 +557,7 @@ create_instance() {
         _site="$(_run cat \""${ZJAIL_CONFIG}/site.conf"\")" || _fatal "Site template not found: ${OPTARG}"
     fi
 
-
-    while getopts "ac:C:h:j:p:s:S:u:w" _opt; do
+    while getopts "ac:C:h:j:p:r:R:s:S:u:Uw" _opt; do
         case "${_opt}" in
             a)
                 # Autostart
@@ -549,18 +573,6 @@ create_instance() {
                 local _instance_path="${OPTARG#*:}"
                 _check /bin/cp \""${_host_path}"\" \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
                 ;;
-#            f)
-#                # Initialise firstboot_zjail rc.d script (execs files in /var/firstboot_zjail)
-#                _check /bin/mkdir -p \""${ZJAIL_RUN}/${_instance_id}/var/firstboot_zjail"\"
-#                _check /bin/mkdir -p \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d"\"
-#                if ! /bin/echo "${_firstboot_zjail}" | _silent /usr/bin/tee -a \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"\"
-#                then
-#                    _fatal "Cant write ${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"
-#                fi
-#                _check /bin/chmod 755 \""${ZJAIL_RUN}/${_instance_id}/usr/local/etc/rc.d/firstboot_zjail"\"
-#                _check /usr/bin/touch \""${ZJAIL_RUN}/${_instance_id}/firstboot"\"
-#                _check /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/sysrc firstboot_zjail_enable=YES
-#                ;;
             h)
                 # Set hostname
                 _hostname="${OPTARG}"
@@ -592,6 +604,39 @@ create_instance() {
                 _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \""${ZJAIL_RUN}/${_instance_id}"\" /usr/sbin/pkg install \""${OPTARG}"\"
 
                 _check /sbin/umount \""${ZJAIL_RUN}/${_instance_id}/dev"\"
+                ;;
+            r)  
+                # Run command (install as firstboot script)
+                if [ ! -d "${ZJAIL_RUN}/${_instance_id}/var/firstboot_run.d" ]
+                then
+                    # Install firstboot_run
+                    install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
+                fi
+                local _run_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_run_id}")"
+                echo "${OPTARG}" | _check /usr/bin/tee -a \""${_run_file}"\"
+                _run_id=$((_run_id + 1))
+                ;;
+            R)  
+                # Run file (install as firstboot script)
+                if [ ! -d "${ZJAIL_RUN}/${_instance_id}/var/firstboot_run.d" ]
+                then
+                    # Install firstboot_run
+                    install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
+                fi
+                local _run_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_run_id}")"
+                if [ "${OPTARG}" = "-" ]
+                then
+                    # Install from stdin
+                    _check /usr/bin/tee -a \""${_run_file}"\"
+                else 
+                    # Install from file
+                    if [ ! -f "${OPTARG}" ]
+                    then
+                        _fatal "Run file [${OPTARG}] not found"
+                    fi
+                    cat "${OPTARG}" | _check /usr/bin/tee -a \""${_run_file}"\"
+                fi
+                _run_id=$((_run_id + 1))
                 ;;
             s)
                 # Run sysrc
@@ -627,6 +672,16 @@ create_instance() {
                 # We assume uid == gid
                 _check /usr/sbin/chown -R \""${_uid}:${_uid}"\" \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh\" 
                 _check /bin/chmod 600 \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys\" 
+                ;;
+            U)  # Update instance on firstboot
+                if [ ! -d "${ZJAIL_RUN}/${_instance_id}/var/firstboot_run.d" ]
+                then
+                    # Install firstboot_run
+                    install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
+                fi
+                local _run_file="$(printf '%s/%s/var/firstboot_run.d/%04d-update' "${ZJAIL_RUN}" "${_instance_id}" "${_run_id}")"
+                echo "${_update_instance}" | _check /usr/bin/tee -a \""${_run_file}"\"
+                _run_id=$((_run_id + 1))
                 ;;
             w)
                 # Add subsequent users to the wheel group
