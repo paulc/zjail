@@ -254,11 +254,11 @@ update_base() {
     then
         _jail_ip="${_jail_ip} ip6.addr=${_ipv6_default}"
     fi
-    if [ -z "${_jail_ip}" ] 
+    if [ -z "${_jail_ip}" ]
     then
         _fatal "Cant find ipv4/ipv6 default addresses"
     fi
-    
+
     # Copy local resolv.conf
     if [ -f "${ZJAIL_BASE}/${_name}/etc/resolv.conf" ]
     then
@@ -398,7 +398,7 @@ install_firstboot_run() {
 # Generate random 64-bit ID as 13 character base32 encoded string
 gen_id() {
     local _id="0000000000000"
-    # Ensure id is not all-numeric (invalid jail name) 
+    # Ensure id is not all-numeric (invalid jail name)
     while expr "${_id}" : '^[0-9]*$' >/dev/null
     do
         # Get 2 x 32 bit unsigned ints from /dev/urandom
@@ -425,7 +425,7 @@ gen_lo() {
     /usr/bin/printf '127.%d.%d.%d\n' $(/usr/bin/od -v -An -N3 -t u1 /dev/urandom)
 }
 
-# Generate random IPv6 Unique Local Address prefix 
+# Generate random IPv6 Unique Local Address prefix
 gen_ula() {
     # 48-bit ULA address - fdXX:XXXX:XXXX (add /16 subnet id and /64 device address)
     printf "fd%s:%s%s:%s%s\n" $(od -v -An -N5 -t x1 /dev/urandom)
@@ -472,10 +472,12 @@ create_instance() {
     [-a]                                # Set sutostart flag
     [-c <site_config>]                  # Set jail.conf template
     [-C <host_path>:<instance_path>]..  # Copy files from host to instance
+    [-f <cmd>]..                        # Install firstboot cmd
+    [-F <file>]..                       # Install firstboot file
     [-h <hostname>]                     # Set hostname
     [-j <jail_param>]..                 # Set jail parameters
     [-p <pkg>]..                        # Install pkg
-    [-r <cmd>]..                        # Run firstboot cmd in instance 
+    [-r <cmd>]..                        # Run cmd (alias for -j 'exec.start = <cmd>')
     [-s <sysrc>]..                      # Set rc.local parameter (through sysrc)
     [-S <host_path>:<instance_path>]..  # Copy files filtering through envsubst(1)
     [-u '<user>:<pk>']..                # Add user/pk (note: pk needs to be quoted)
@@ -509,7 +511,7 @@ create_instance() {
     then
         # Release image
         _latest="${ZJAIL_DIST_DATASET}/${_base}@release"
-    else 
+    else
         _fatal "BASE/RELEASE image [${_base}] not found"
     fi
 
@@ -547,8 +549,8 @@ create_instance() {
     local _jail_params=""
     local _hostname="${_instance_id}"
     local _autostart="off"
-    local _run_id=0
-    #
+    local _firstboot_id=0
+    local _run=0
     # Add users to wheel group
     local _wheel=""
 
@@ -557,7 +559,7 @@ create_instance() {
         _site="$(_run cat \""${ZJAIL_CONFIG}/site.conf"\")" || _fatal "Site template not found: ${OPTARG}"
     fi
 
-    while getopts "ac:C:h:j:p:r:R:s:S:u:Uw" _opt; do
+    while getopts "ac:C:f:F:h:j:p:r:s:S:u:Uw" _opt; do
         case "${_opt}" in
             a)
                 # Autostart
@@ -572,6 +574,39 @@ create_instance() {
                 local _host_path="${OPTARG%:*}"
                 local _instance_path="${OPTARG#*:}"
                 _check /bin/cp \""${_host_path}"\" \""${ZJAIL_RUN}/${_instance_id}/${_instance_path}"\"
+                ;;
+            f)
+                # Install command as firstboot script
+                if [ ! -d "${ZJAIL_RUN}/${_instance_id}/var/firstboot_run.d" ]
+                then
+                    # Install firstboot_run
+                    install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
+                fi
+                local _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
+                echo "${OPTARG}" | _check /usr/bin/tee -a \""${_firstboot_file}"\"
+                _firstboot_id=$((_firstboot_id + 1))
+                ;;
+            F)
+                # Iinstall file as firstboot script
+                if [ ! -d "${ZJAIL_RUN}/${_instance_id}/var/firstboot_run.d" ]
+                then
+                    # Install firstboot_run
+                    install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
+                fi
+                local _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
+                if [ "${OPTARG}" = "-" ]
+                then
+                    # Install from stdin
+                    _check /usr/bin/tee -a \""${_firstboot_file}"\"
+                else
+                    # Install from file
+                    if [ ! -f "${OPTARG}" ]
+                    then
+                        _fatal "Run file [${OPTARG}] not found"
+                    fi
+                    cat "${OPTARG}" | _check /usr/bin/tee -a \""${_firstboot_file}"\"
+                fi
+                _run_id=$((_run_id + 1))
                 ;;
             h)
                 # Set hostname
@@ -605,38 +640,16 @@ create_instance() {
 
                 _check /sbin/umount \""${ZJAIL_RUN}/${_instance_id}/dev"\"
                 ;;
-            r)  
-                # Run command (install as firstboot script)
-                if [ ! -d "${ZJAIL_RUN}/${_instance_id}/var/firstboot_run.d" ]
+            r)
+                # Run command instead of /etc/rc (shortcut for -j 'exec.start=...')
+                if [ "${_run}" -eq 0 ]
                 then
-                    # Install firstboot_run
-                    install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
+                    # Clear any existing exec.start items
+                    _jail_params="$(printf '%s\n%s;' "${_jail_params}" "exec.start = \"${OPTARG}\"")"
+                    _run=1
+                else
+                    _jail_params="$(printf '%s\n%s;' "${_jail_params}" "exec.start += \"${OPTARG}\"")"
                 fi
-                local _run_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_run_id}")"
-                echo "${OPTARG}" | _check /usr/bin/tee -a \""${_run_file}"\"
-                _run_id=$((_run_id + 1))
-                ;;
-            R)  
-                # Run file (install as firstboot script)
-                if [ ! -d "${ZJAIL_RUN}/${_instance_id}/var/firstboot_run.d" ]
-                then
-                    # Install firstboot_run
-                    install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
-                fi
-                local _run_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_run_id}")"
-                if [ "${OPTARG}" = "-" ]
-                then
-                    # Install from stdin
-                    _check /usr/bin/tee -a \""${_run_file}"\"
-                else 
-                    # Install from file
-                    if [ ! -f "${OPTARG}" ]
-                    then
-                        _fatal "Run file [${OPTARG}] not found"
-                    fi
-                    cat "${OPTARG}" | _check /usr/bin/tee -a \""${_run_file}"\"
-                fi
-                _run_id=$((_run_id + 1))
                 ;;
             s)
                 # Run sysrc
@@ -644,7 +657,7 @@ create_instance() {
                 ;;
             S)
                 # Copy file from host filtering througfh envsubst(1)
-                if [ ! -x /usr/local/bin/envsubst ] 
+                if [ ! -x /usr/local/bin/envsubst ]
                 then
                     _fatal "/usr/local/bin/envsubst not found (install gettext pkg)"
                 fi
@@ -670,8 +683,8 @@ create_instance() {
                 _check /bin/mkdir -p -m 700 \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh\"
                 _check /usr/bin/printf "'%s\n'" \""${_pk}"\" \>\> \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys\"
                 # We assume uid == gid
-                _check /usr/sbin/chown -R \""${_uid}:${_uid}"\" \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh\" 
-                _check /bin/chmod 600 \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys\" 
+                _check /usr/sbin/chown -R \""${_uid}:${_uid}"\" \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh\"
+                _check /bin/chmod 600 \"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys\"
                 ;;
             U)  # Update instance on firstboot
                 if [ ! -d "${ZJAIL_RUN}/${_instance_id}/var/firstboot_run.d" ]
@@ -709,11 +722,6 @@ create_instance() {
     _check /sbin/zfs set zjail:autostart=\""${_autostart}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
     _check /sbin/zfs set zjail:counter=\""${_counter}"\" \""${ZJAIL_RUN_DATASET}/${_instance_id}"\"
 
-    if [ -z "${_site}" ]
-    then
-        _fatal "No site config"
-    fi
-
     local _jail_conf="\
 ${_site}
 
@@ -744,7 +752,7 @@ ${_instance_id} {
     _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail ${_jail_verbose} -f - -c ${_instance_id} >&2"
 
     trap - EXIT
-    printf '%s\n' $_instance_id 
+    printf '%s\n' $_instance_id
 }
 
 list_instances() {
@@ -757,7 +765,7 @@ list_instance_details() {
     local _header="1"
 
     _run "/sbin/zfs list -H -r -o zjail:id,zjail:hostname,zjail:suffix,zjail:base,zjail:autostart \""${ZJAIL_RUN_DATASET}"\" | sed -e '/^-/d'" | \
-        while read _id _hostname _suffix _base _autostart 
+        while read _id _hostname _suffix _base _autostart
         do
             if [ -n "${_header}" ]
             then
@@ -767,13 +775,13 @@ list_instance_details() {
 
             local _jid=$(jls -j "${_id}" jid 2>/dev/null)
             if [ -n "${_jid}" ]
-            then 
+            then
                 local _status="RUNNING [${_jid}]"
-            else 
+            else
                 local _status="NOT RUNNING"
             fi
             printf '%-14s %-16s %-19s %-36s %-9s %s\n' "${_id}" "${_hostname}" "${_suffix}" "${_base##*/}" "${_autostart}" "${_status}"
-        done 
+        done
 }
 
 edit_jail_conf() {
@@ -833,7 +841,7 @@ stop_instance() {
 
     _check "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail ${_jail_verbose} -f - -r ${_instance_id} >&2"
 
-    # Cleanup any mounts 
+    # Cleanup any mounts
     cleanup_mounts "${_instance_id}"
 }
 
@@ -856,7 +864,7 @@ destroy_instance() {
     _silent /usr/sbin/jls -j "${_instance_id}" jid && \
         _log "/sbin/zfs get -H -o value zjail:conf \""${ZJAIL_RUN_DATASET}/${_instance_id}"\" | jail ${_jail_verbose} -f - -r ${_instance_id} >&2"
 
-    # Cleanup any mounts 
+    # Cleanup any mounts
     cleanup_mounts "${_instance_id}"
 
     # Wait for jail to stop
@@ -898,7 +906,7 @@ clear_autostart() {
 autostart() {
     for _instance_id in $(_run /sbin/zfs list -r -H -o zjail:autostart,name \""${ZJAIL_RUN_DATASET}"\" | sed -ne 's/^on.*\///p')
     do
-        if _silent /usr/sbin/jls -j "${_instance_id}" jid 
+        if _silent /usr/sbin/jls -j "${_instance_id}" jid
         then
             echo "INSTANCE [${_instance_id}] running"
         else
