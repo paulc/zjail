@@ -25,6 +25,17 @@ _log_cmdline() {
     fi
 }
 
+_log_message() {
+    # Log command line if DEBUG set (optionally in colour)
+    if [ -n "$DEBUG" ]
+    then
+        local _msg="$@"
+        printf '%s' "${COLOUR:+${_YELLOW}}" >&2
+        printf '%s [%s]\n' "$(date '+%b %d %T')" "INFO: $_msg" >&2
+        printf '%s' "${COLOUR:+${_NORMAL}}" >&2
+    fi
+}
+
 _log() {
     # Run command optionally printing debug output if $DEBUG is set
     # (in colour if $COLOUR is set) and capture stdout/err
@@ -583,30 +594,33 @@ create_instance() {
                     install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
                 fi
                 local _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
-                echo "${OPTARG}" | _check /usr/bin/tee -a \""${_firstboot_file}"\"
-                _firstboot_id=$((_firstboot_id + 1))
+                _log_message "firstboot_file: ${_firstboot_file}"
+                echo "${OPTARG}" | _check /usr/bin/tee \""${_firstboot_file}"\"
+                _firstboot_id=$(($_firstboot_id + 1))
                 ;;
             F)
                 # Iinstall file as firstboot script
                 if [ ! -d "${ZJAIL_RUN}/${_instance_id}/var/firstboot_run.d" ]
                 then
                     # Install firstboot_run
+                    _log_message "Installing firstboot_run"
                     install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
                 fi
                 local _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
+                _log_message "firstboot_file: ${_firstboot_file}"
                 if [ "${OPTARG}" = "-" ]
                 then
                     # Install from stdin
-                    _check /usr/bin/tee -a \""${_firstboot_file}"\"
+                    _check /usr/bin/tee \""${_firstboot_file}"\"
                 else
                     # Install from file
                     if [ ! -f "${OPTARG}" ]
                     then
                         _fatal "Run file [${OPTARG}] not found"
                     fi
-                    cat "${OPTARG}" | _check /usr/bin/tee -a \""${_firstboot_file}"\"
+                    cat "${OPTARG}" | _check /usr/bin/tee \""${_firstboot_file}"\"
                 fi
-                _run_id=$((_run_id + 1))
+                _firstboot_id=$(($_firstboot_id + 1))
                 ;;
             h)
                 # Set hostname
