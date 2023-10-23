@@ -77,7 +77,7 @@ jexec_base() {
     fi
 
     # Create snapshot
-    _check /sbin/zfs snapshot \'"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\'
+	snapshot_base "${_name}"
 }
 
 chroot_base() {
@@ -96,7 +96,7 @@ chroot_base() {
         _run /usr/sbin/chroot \'"${ZJAIL_BASE}/${_name}"\' /bin/sh
     fi
 
-    _check /sbin/zfs snapshot \'"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\'
+	snapshot_base "${_name}"
 }
 
 clone_base() {
@@ -116,7 +116,7 @@ clone_base() {
     fi
 
     _check /sbin/zfs clone \'"${_latest}"\' \'"${ZJAIL_BASE_DATASET}/${_target}"\'
-    _check /sbin/zfs snapshot \'"${ZJAIL_BASE_DATASET}/${_target}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\'
+	snapshot_base "${_target}"
 }
 
 snapshot_base() {
@@ -126,6 +126,11 @@ snapshot_base() {
         _fatal "Usage: snapshot_base <base>"
     fi
     _silent /bin/test -d \'"${ZJAIL_BASE}/${_name}"\' || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
+	# Check we dont have two snapshots with the same timestamp
+	if _silent /sbin/zfs list -H -o name -t snap \'"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\'
+	then
+		sleep 1
+	fi
     _check /sbin/zfs snapshot \'"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\'
 }
 

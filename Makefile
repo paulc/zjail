@@ -13,5 +13,10 @@ bin/zjail: $(SRC)
 		src/zjail.sh > bin/zjail
 	chmod 755 bin/zjail
 
+.PHONY: clean
 clean:
 	rm -f bin/zjail
+
+.PHONY: test
+test: bin/zjail
+	./test/run.sh
