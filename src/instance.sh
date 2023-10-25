@@ -77,7 +77,11 @@ stop_instance() {
     fi
 
     _silent /sbin/zfs get -H -o value zjail:id \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' || _fatal "INSTANCE [${_instance_id}] not found"
-    _silent /usr/sbin/jls -j "${_instance_id}" jid || _fatal "INSTANCE [${_instance_id}] not running"
+    if ! _silent /usr/sbin/jls -j "${_instance_id}" jid 
+    then
+        echo "INSTANCE [${_instance_id}] not running" >&2
+        return
+    fi
 
     local _jail_verbose=""
     if [ -n "${DEBUG}" ]

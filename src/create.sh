@@ -171,13 +171,14 @@ create_instance() {
                 ;;
             r)
                 # Run command instead of /etc/rc (shortcut for -j 'exec.start=...')
+                # (We try to quote any embedded " characters but this will fail with escaped quotes)
                 if [ "${_run}" -eq 0 ]
                 then
                     # Clear any existing exec.start items
-                    _jail_params="$(printf '%s\n%s;' "${_jail_params}" "exec.start = \'${OPTARG}\'")"
+                    _jail_params="$(printf '%s\nexec.start = "%s";' "${_jail_params}" "$(echo "${OPTARG}" | sed -e 's/"/\\"/g')" )"
                     _run=1
                 else
-                    _jail_params="$(printf '%s\n%s;' "${_jail_params}" "exec.start += \'${OPTARG}\'")"
+                    _jail_params="$(printf '%s\nexec.start += "%s";' "${_jail_params}" "$(echo "${OPTARG}" | sed -e 's/"/\\"/g')" )"
                 fi
                 ;;
             s)

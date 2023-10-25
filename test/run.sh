@@ -28,5 +28,9 @@ trap "_run /sbin/zfs destroy -Rf \'${ZROOT}${ZJAIL}\'" EXIT
 ./bin/zjail clone_base b1 b2
 ./bin/zjail chroot_base b2 /bin/freebsd-version
 echo /bin/freebsd-version | ./bin/zjail jexec_base b2 
-
+./bin/zjail create_instance b1 -r /bin/freebsd-version
 ./bin/zjail list_instances
+./bin/zjail list_instances | xargs -n1 ./bin/zjail stop_instance
+./bin/zjail list_instances | xargs -n1 ./bin/zjail start_instance
+./bin/zjail list_instances | xargs -n1 ./bin/zjail destroy_instance
+
