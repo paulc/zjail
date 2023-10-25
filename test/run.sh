@@ -20,15 +20,26 @@ export ZROOT="${ZROOT:-zroot}"
 export ZJAIL="$(printf '/tmp/zjail-test %s' $(/usr/bin/od -v -An -N4 -tx4 /dev/urandom))"
 
 ./bin/zjail create_zfs_datasets
-trap "_run /sbin/zfs destroy -Rf \'${ZROOT}${ZJAIL}\'" EXIT
+trap "./bin/zjail list_instances | xargs -n1 ./bin/zjail destroy_instance; _run /sbin/zfs destroy -Rf \'${ZROOT}${ZJAIL}\'" EXIT
 
 ./bin/zjail fetch_release "${OS_RELEASE}"
 ./bin/zjail create_base b1
 ./bin/zjail update_base b1
 ./bin/zjail clone_base b1 b2
-./bin/zjail chroot_base b2 /bin/freebsd-version
-echo /bin/freebsd-version | ./bin/zjail jexec_base b2 
-./bin/zjail create_instance b1 -r /bin/freebsd-version
+
+VER1=$(./bin/zjail chroot_base b1 /bin/freebsd-version)
+VER2=$(echo /bin/freebsd-version | ./bin/zjail jexec_base b2)
+
+test "${VER1}" = "${VER2}"
+
+ID=$(./bin/zjail create_instance b2 -j persist -r /bin/freebsd-version)
+./bin/zjail stop_instance $ID
+./bin/zjail start_instance $ID
+./bin/zjail destroy_instance $ID
+
+./bin/zjail create_instance b1 -j persist 
+./bin/zjail create_instance b1 -j persist
+
 ./bin/zjail list_instances
 ./bin/zjail list_instances | xargs -n1 ./bin/zjail stop_instance
 ./bin/zjail list_instances | xargs -n1 ./bin/zjail start_instance
