@@ -1,5 +1,13 @@
 
-SRC := Makefile src/zjail.sh src/log.sh src/util.sh src/config.sh src/setup.sh src/base.sh src/instance.sh src/create.sh
+SRC := Makefile \
+	   src/zjail.sh \
+	   src/log.sh \
+	   src/util.sh \
+	   src/config.sh \
+	   src/setup.sh \
+	   src/base.sh \
+	   src/instance.sh \
+	   src/create_instance.sh
 
 bin/zjail: $(SRC)
 	sed -e '/INSERT: log.sh/r src/log.sh' \
@@ -8,8 +16,8 @@ bin/zjail: $(SRC)
 		-e '/INSERT: setup.sh/r src/setup.sh' \
 		-e '/INSERT: base.sh/r src/base.sh' \
 		-e '/INSERT: instance.sh/r src/instance.sh' \
-		-e '/INSERT: create.sh/r src/create.sh' \
-		-e 's/^MERGED=""/MERGED=1/' \
+		-e '/INSERT: create_instance.sh/r src/create_instance.sh' \
+		-e 's/^MERGED=.*/MERGED=1/' \
 		src/zjail.sh > bin/zjail
 	chmod 755 bin/zjail
 

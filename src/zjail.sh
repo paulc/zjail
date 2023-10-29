@@ -12,7 +12,7 @@ set -o errexit
 # INSERT: setup.sh
 # INSERT: base.sh
 # INSERT: instance.sh
-# INSERT: create.sh
+# INSERT: create_instance.sh
 MERGED=""
 
 # For testing
@@ -25,7 +25,7 @@ then
     . "${_src}/setup.sh"
     . "${_src}/base.sh"
     . "${_src}/instance.sh"
-    . "${_src}/create.sh"
+    . "${_src}/create_instance.sh"
 fi
 
 DEBUG="${DEBUG:-}"
