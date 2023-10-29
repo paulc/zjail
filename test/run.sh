@@ -6,7 +6,8 @@ set -o errexit
 
 . ./src/log.sh
 
-export DEBUG=1 COLOUR=1
+export DEBUG="${DEBUG:-1}"
+export COLOUR="${COLOUR:-1}"
 
 OS_RELEASE="$(/sbin/sysctl -n kern.osrelease)"
 OS_RELEASE="${OS_RELEASE%-p[0-9]*}"     # Strip patch
@@ -51,12 +52,16 @@ ID=$(./bin/zjail create_instance b2 -j persist -r /bin/freebsd-version)
 ./bin/zjail destroy_instance $ID
 
 # Create 2 persistent instances
-./bin/zjail create_instance b1 -j persist 
-./bin/zjail create_instance b2 -j persist
+I1=$(./bin/zjail create_instance b1 -j persist)
+I2=$(./bin/zjail create_instance b2 -j persist)
 
-./bin/zjail list_instances
+./bin/zjail list_instances | grep -q "${I1}"
+./bin/zjail list_instances | grep -q "${I2}"
+
 ./bin/zjail list_instances | xargs -n1 ./bin/zjail stop_instance
 ./bin/zjail list_instances | xargs -n1 ./bin/zjail start_instance
 ./bin/zjail list_instances | xargs -n1 ./bin/zjail destroy_instance
 
+[ $(./bin/zjail list_instances | wc -l) -eq 0 ]
 
+echo OK

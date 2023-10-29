@@ -50,7 +50,7 @@ update_base() {
     _check /bin/cp /etc/resolv.conf \'"${ZJAIL_BASE}/${_name}/etc/resolv.conf"\'
 
     # Run freebsd-update in jail
-    echo "${_update_instance}" | jexec_base "${_name}" ${_jail_ip}
+    echo "${_update_instance}" | jexec_base "${_name}" ${_jail_ip} | _log_output
 }
 
 jexec_base() {

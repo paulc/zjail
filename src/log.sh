@@ -52,6 +52,19 @@ _log() {
     fi
 }
 
+_log_output() {
+    local _status=$?
+    if [ -n "$DEBUG" ]
+    then
+        printf '%s' "${COLOUR:+${_CYAN}}" >&2
+        sed -e 's/^/     | /' >&2
+        printf '%s' "${COLOUR:+${_NORMAL}}" >&2
+    else
+        cat >&2
+    fi
+    return $_status
+}
+
 _run() {
     # Run command directly via eval (logs cmd if $DEBUG set)
     local _cmd="$@"

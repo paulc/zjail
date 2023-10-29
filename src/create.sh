@@ -224,7 +224,7 @@ create_instance() {
                 fi
                 _check /bin/cp /etc/resolv.conf \'"${ZJAIL_RUN}/${_instance_id}/etc/resolv.conf"\'
 
-                /bin/echo "${_update_instance}" | _check /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /bin/sh
+                /bin/echo "${_update_instance}" | _check /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /bin/sh | _log_output
                 ;;
             w)
                 # Add subsequent users to the wheel group
