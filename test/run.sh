@@ -52,15 +52,19 @@ fi
 
 # Non persistent instance
 ID=$(./bin/zjail create_instance b2 -r /bin/freebsd-version)
+./bin/zjail list_instances | grep -q "${ID}"
 ./bin/zjail stop_instance $ID
 ./bin/zjail start_instance $ID
 ./bin/zjail destroy_instance $ID
+./bin/zjail list_instances | grep -q "${ID}" || true
 
 # Persistent instance
 ID=$(./bin/zjail create_instance b2 -j persist -r /bin/freebsd-version)
+./bin/zjail list_instances | grep -q "${ID}"
 ./bin/zjail stop_instance $ID
 ./bin/zjail start_instance $ID
 ./bin/zjail destroy_instance $ID
+./bin/zjail list_instances | grep -q "${ID}" || true
 
 # Create 2 persistent instances
 I1=$(./bin/zjail create_instance b1 -j persist)

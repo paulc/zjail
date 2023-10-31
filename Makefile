@@ -26,5 +26,5 @@ clean:
 	rm -f bin/zjail
 
 .PHONY: test
-test: bin/zjail
-	./test/run.sh
+test: bin/zjail /usr/local/bin/shunit2
+	./test/shunit.sh 2>/dev/null
