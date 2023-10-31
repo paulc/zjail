@@ -22,14 +22,14 @@ oneTimeSetUp() {
         export ZJAIL="$(printf '/tmp/zjail-test %s' $(/usr/bin/od -v -An -N4 -tx4 /dev/urandom))"
 
         # Setup datasets
-        ./bin/zjail create_zfs_datasets
+        ./bin/zjail create_zfs_datasets || fail CREATE_ZFS_DATASETS
 
         # Fetch release
-        ./bin/zjail fetch_release "${OS_RELEASE}"
+        ./bin/zjail fetch_release "${OS_RELEASE}" || fail FETCH_RELEASE
 
         # Create base
-        ./bin/zjail create_base b1
-        ./bin/zjail update_base b1
+        ./bin/zjail create_base b1 || fail CREATE_BASE
+        ./bin/zjail update_base b1 || fail UPDATE_BASE
     else
         # Use existing ZJAIL 
         if ! [ -d "${ZJAIL}/dist/${ARCH}/${OS_RELEASE}" -a -d "${ZJAIL}/base/${ARCH}/b1" ] 
