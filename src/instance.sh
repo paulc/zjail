@@ -58,7 +58,11 @@ start_instance() {
 
     # Check we have a valid instance
     _silent /sbin/zfs get -H -o value zjail:id \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' || _fatal "INSTANCE [${_instance_id}] not found"
-    _silent /usr/sbin/jls -j "${_instance_id}" jid && _fatal "INSTANCE [${_instance_id}] running"
+    if _silent /usr/sbin/jls -j "${_instance_id}" jid
+    then
+        echo "INSTANCE [${_instance_id}] running" >&2
+        return
+    fi
 
     local _jail_verbose=""
     if [ -n "${DEBUG}" ]
@@ -160,7 +164,7 @@ autostart() {
         then
             echo "INSTANCE [${_instance_id}] running"
         else
-            _check "/sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' | jail -vf - -c ${_instance_id}"
+            _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail -vf - -c ${_instance_id}
         fi
     done
 }
