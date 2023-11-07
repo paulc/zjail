@@ -143,7 +143,7 @@ create_instance() {
                 ;;
             j)
                 # Add jail param
-                _jail_params="$(printf '%s\n%s;' "${_jail_params}" "${OPTARG}")"
+                _jail_params="$(printf '%s\n    %s;' "${_jail_params}" "${OPTARG}")"
                 ;;
             p)
                 # Install pkg
@@ -175,10 +175,10 @@ create_instance() {
                 if [ "${_run}" -eq 0 ]
                 then
                     # Clear any existing exec.start items
-                    _jail_params="$(printf '%s\nexec.start = "%s";' "${_jail_params}" "$(echo "${OPTARG}" | sed -e 's/"/\\"/g')" )"
+                    _jail_params="$(printf '%s\n    exec.start = "%s";' "${_jail_params}" "$(echo "${OPTARG}" | sed -e 's/"/\\"/g')" )"
                     _run=1
                 else
-                    _jail_params="$(printf '%s\nexec.start += "%s";' "${_jail_params}" "$(echo "${OPTARG}" | sed -e 's/"/\\"/g')" )"
+                    _jail_params="$(printf '%s\n    exec.start += "%s";' "${_jail_params}" "$(echo "${OPTARG}" | sed -e 's/"/\\"/g')" )"
                 fi
                 ;;
             s)

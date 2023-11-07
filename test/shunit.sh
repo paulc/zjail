@@ -160,6 +160,7 @@ testAutostart() {
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
     assertNotContains "$(./bin/zjail list_instances)" $ID
 }
+
 testLoopback() {
     LO=$(_run ifconfig lo create)
     ID=$(./bin/zjail create_instance b1 -j allow.raw_sockets -j "\$lo=$LO" -c "${ZJAIL}/config/lo.conf")
@@ -168,6 +169,38 @@ testLoopback() {
     _silent jexec $ID ping -q -c1 -t1 ::1 || fail PING6
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
     ifconfig $LO destroy
+}
+
+testCounter() {
+    ID1=$(./bin/zjail create_instance b1 -j persist -r /bin/freebsd-version)
+    ID2=$(./bin/zjail create_instance b1 -j persist -r /bin/freebsd-version)
+    C1=$(zfs get -H -o value zjail:counter "${ZJAIL}/run/${ARCH}/${ID1}")
+    C2=$(zfs get -H -o value zjail:counter "${ZJAIL}/run/${ARCH}/${ID2}")
+    [ $(($C1 + 1)) -eq ${C2} ] || fail COUNTER
+    ./bin/zjail destroy_instance $ID1 || fail DESTROY_INSTANCE
+    ./bin/zjail destroy_instance $ID2 || fail DESTROY_INSTANCE
+}
+
+testListInstanceDetails() {
+    ID=$(./bin/zjail create_instance b1 -j persist -r /bin/freebsd-version)
+    assertContains "$(./bin/zjail list_instance_details)" $ID
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    assertNotContains "$(./bin/zjail list_instances)" $ID
+}
+
+testListInstanceDetails2() {
+    ID=$(./bin/zjail create_instance b1 -j persist -r /bin/freebsd-version)
+    assertContains "$(./bin/zjail list_instance_details $ID)" $ID
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    assertNotContains "$(./bin/zjail list_instances)" $ID
+}
+
+testiEditJailConf() {
+    ID=$(./bin/zjail create_instance b1 -j persist -r /bin/freebsd-version)
+    export EDITOR=/bin/cat
+    assertContains "$(./bin/zjail edit_jail_conf $ID)" $ID
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    assertNotContains "$(./bin/zjail list_instances)" $ID
 }
 
 . /usr/local/bin/shunit2
