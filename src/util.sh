@@ -95,6 +95,25 @@ increment_counter() {
 NEXT=\$(( \$(cat "${_file}" 2>/dev/null || echo 0) + 1 ))
 echo \$NEXT | tee "${_file}"
 EOM
+}
 
+# Set counter (only set forwards)
+set_counter() {
+    local _file="${1:-}"
+    local _value="${2:-}"
+    if [ -z "${_file}" ]
+    then
+        _fatal "Usage: set_counter <file> <value>"
+    fi
+
+    /usr/bin/lockf -k -s -t 2 "${_file}.lock" /bin/sh -eu <<EOM
+CURRENT=\$(cat "${_file}" 2>/dev/null || echo 0)
+if [ ${_value} -gt \${CURRENT} ] 2>/dev/null
+then
+    echo ${_value} > "${_file}"
+else
+    echo "ERROR: Cant set counter [CURRENT:\${CURRENT}]" >&2
+fi
+EOM
 }
 

@@ -163,6 +163,31 @@ destroy_instance() {
     _check /sbin/zfs destroy -r \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
 }
 
+set_hostname() {
+    local _instance_id="${1:-}"
+    local _hostname="${2:-}"
+    if [ -z "${_instance_id}" -o -z "${_hostname}" ]
+    then
+        _fatal "Usage: $0 set_hostname <instance> <hostname>"
+    fi
+
+    # Check we have a valid instance
+    _silent /sbin/zfs get -H -o value zjail:id \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' || _fatal "INSTANCE [${_instance_id}] not found"
+    
+    # Modify jail.conf
+    local _jail_conf="$(/sbin/zfs get -H -o value zjail:conf "${ZJAIL_RUN_DATASET}/${_instance_id}" | sed -e "s/\(^[[:space:]]*\$hostname\).*/\1 = \"${_hostname}\";/")"
+    _check /sbin/zfs set zjail:conf=\'"${_jail_conf}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
+    
+    # Update zfs property
+    _check /sbin/zfs set zjail:hostname=\'"${_hostname}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
+
+    # If the jail is running reset host.hostname
+    if _silent /usr/sbin/jls -j "${_instance_id}" jid
+    then
+        _check /usr/sbin/jail -m \'"name=${_instance_id}"\' \'"host.hostname=\"${_hostname}\""\'
+    fi
+}
+
 set_autostart() {
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]

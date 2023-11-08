@@ -252,6 +252,10 @@ create_instance() {
     _check /sbin/zfs set zjail:autostart=\'"${_autostart}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
     _check /sbin/zfs set zjail:counter=\'"${_counter}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
 
+    local _counter24=$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(bshr(c,16),255),".",band(bshr(c,8),255),".",band(c,255)')
+    local _counter16=$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(bshr(c,8),255),".",band(c,255)')
+    local _counter8=$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(c,255)')
+
     local _jail_conf="\
 ${_site}
 
@@ -261,9 +265,12 @@ ${_instance_id} {
     \$suffix = \"${_ipv6_suffix}\";
     \$ipv4_lo = \"${_ipv4_lo}\";
     \$counter = \"${_counter}\";
+    \$counter24 = \"${_counter24}\";
+    \$counter16 = \"${_counter16}\";
+    \$counter8 = \"${_counter8}\";
     \$root = \""${ZJAIL_RUN}/${_instance_id}"\";
     path = \""${ZJAIL_RUN}/${_instance_id}"\";
-    host.hostname = \""${_hostname}"\";
+    host.hostname = \$hostname;
     ${_jail_params}
 }
 "

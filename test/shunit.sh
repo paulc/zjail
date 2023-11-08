@@ -109,7 +109,6 @@ testLatestSnapshot() {
     assertNotNull "${LATEST}"
 }
 
-
 testNonPersistent() {
     ID=$(./bin/zjail create_instance b1 -r /bin/freebsd-version)
     assertContains "$(./bin/zjail list_instances)" $ID
@@ -172,8 +171,8 @@ testLoopback() {
 }
 
 testCounter() {
-    ID1=$(./bin/zjail create_instance b1 -j persist -r /bin/freebsd-version)
-    ID2=$(./bin/zjail create_instance b1 -j persist -r /bin/freebsd-version)
+    ID1=$(./bin/zjail create_instance b1 -r /bin/freebsd-version)
+    ID2=$(./bin/zjail create_instance b1 -r /bin/freebsd-version)
     C1=$(zfs get -H -o value zjail:counter "${ZJAIL}/run/${ARCH}/${ID1}")
     C2=$(zfs get -H -o value zjail:counter "${ZJAIL}/run/${ARCH}/${ID2}")
     [ $(($C1 + 1)) -eq ${C2} ] || fail COUNTER
@@ -184,6 +183,19 @@ testCounter() {
 testListInstanceDetails() {
     ID=$(./bin/zjail create_instance b1 -j persist -r /bin/freebsd-version)
     assertContains "$(./bin/zjail list_instance_details)" $ID
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    assertNotContains "$(./bin/zjail list_instances)" $ID
+}
+
+testSetHostname() {
+    ID=$(./bin/zjail create_instance b1 -j persist -h OLD)
+    assertContains "$(jexec $ID hostname)" OLD
+    ./bin/zjail set_hostname $ID NEW || fail SET_HOSTNAME
+    assertContains "$(jexec $ID hostname)" NEW
+    assertContains "$(zfs get -H -o value zjail:hostname "${ZJAIL}/run/${ARCH}/${ID}")" NEW
+    ./bin/zjail stop_instance $ID || fail STOP_INSTANCE
+    ./bin/zjail start_instance $ID || fail START_INSTANCE
+    assertContains "$(jexec $ID hostname)" NEW
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
     assertNotContains "$(./bin/zjail list_instances)" $ID
 }
