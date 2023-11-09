@@ -1,7 +1,7 @@
 
 ### Manage bases
 
-create_base() {
+create_base() { # <name> [os_release]
     local _name="${1:-}"
     if [ -z "${_name}" ]
     then
@@ -17,7 +17,7 @@ create_base() {
     _check /sbin/zfs snapshot \'"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\'
 }
 
-update_base() {
+update_base() { # <base>
     local _name="${1:-}"
     if [ -z "${_name}" ]
     then
@@ -42,18 +42,18 @@ update_base() {
         _fatal "Cant find ipv4/ipv6 default addresses"
     fi
 
-    # Copy local resolv.conf
+    # Copy local resolv.conf (will be cleaned up in chroot script
     if [ -f "${ZJAIL_BASE}/${_name}/etc/resolv.conf" ]
     then
         _check /bin/cp \'"${ZJAIL_BASE}/${_name}/etc/resolv.conf"\' \'"${ZJAIL_BASE}/${_name}/etc/resolv.conf.orig"\'
     fi
     _check /bin/cp /etc/resolv.conf \'"${ZJAIL_BASE}/${_name}/etc/resolv.conf"\'
 
-    # Run freebsd-update in jail
-    echo "${_update_instance}" | jexec_base "${_name}" ${_jail_ip} | _log_output
+	# Run freebsd-update in chroot
+	echo "${_update_instance}" | chroot_base "${_name}" | _log_output
 }
 
-jexec_base() {
+jexec_base() { # <base> [jail_params]..
     # Create temporary jail and run /bin/sh
     local _name="${1:-}"
     if [ -z "${_name}" ]
@@ -80,7 +80,7 @@ jexec_base() {
 	snapshot_base "${_name}"
 }
 
-chroot_base() {
+chroot_base() { # <base> [cmd]..
     local _name="${1:-}"
     if [ -z "${_name}" ]
     then
@@ -99,7 +99,7 @@ chroot_base() {
 	snapshot_base "${_name}"
 }
 
-clone_base() {
+clone_base() { # <base> <target>
     local _name="${1:-}"
     local _target="${2:-}"
     if [ -z "${_name}" -o -z "${_target}" ]
@@ -119,7 +119,7 @@ clone_base() {
 	snapshot_base "${_target}"
 }
 
-snapshot_base() {
+snapshot_base() { # <base>
     local _name="${1:-}"
     if [ -z "${_name}" ]
     then
@@ -134,7 +134,7 @@ snapshot_base() {
     _check /sbin/zfs snapshot \'"${ZJAIL_BASE_DATASET}/${_name}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\'
 }
 
-get_latest_snapshot() {
+get_latest_snapshot() { # <base>
     local _name="${1:-}"
     if [ -z "${_name}" ]
     then

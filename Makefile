@@ -9,7 +9,19 @@ SRC := Makefile \
 	   src/instance.sh \
 	   src/create_instance.sh
 
+USAGE != mktemp
+CMDS != mktemp
+
 bin/zjail: $(SRC)
+	# Generate USAGE
+	grep -h '^[a-z][a-zA-Z_].*(' src/* | \
+		sed -e 's/(.*#//' -e 's/(.*$$//' -e 's/^/    /' | \
+		( echo 'USAGE="'; sort; echo '"' ) > $(USAGE)
+	# Generate CMDS
+	grep -h '^[a-z][a-zA-Z_].*(' src/* | \
+		sed -e 's/\(.*\)(.*$$/\1)  \1 "$$@";;/' -e 's/^/    /' | \
+		( printf 'case "$${cmd}" in\n' ; sort; printf '    *) echo "\nUsage: $$0 <cmd> [args..]\n$${USAGE}";exit 1;;\nesac\n' ) > $(CMDS)
+	# Genarate merged cmd
 	sed -e '/INSERT: log.sh/r src/log.sh' \
 		-e '/INSERT: util.sh/r src/util.sh' \
 		-e '/INSERT: config.sh/r src/config.sh' \
@@ -17,13 +29,18 @@ bin/zjail: $(SRC)
 		-e '/INSERT: base.sh/r src/base.sh' \
 		-e '/INSERT: instance.sh/r src/instance.sh' \
 		-e '/INSERT: create_instance.sh/r src/create_instance.sh' \
+		-e '/INSERT: USAGE/r $(USAGE)' \
+		-e '/INSERT: CMDS/r $(CMDS)' \
 		-e 's/^MERGED=.*/MERGED=1/' \
 		src/zjail.sh > bin/zjail
+	# Mark as executable
 	chmod 755 bin/zjail
+	# Cleanup tmp files
+	rm -f $(USAGE) $(CMDS)
 
 .PHONY: clean
 clean:
-	rm -f bin/zjail
+	rm -f bin/zjail $(USAGE) $(CMDS)
 
 .PHONY: test
 test: bin/zjail /usr/local/bin/shunit2

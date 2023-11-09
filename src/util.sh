@@ -6,7 +6,7 @@ get_default_ipv6() {
     ifconfig $(sh -c "route -6n get default || route -6n get ::/1" 2>/dev/null | awk '/interface:/ { print $2 }') inet6 | awk '/inet6/ && ! /fe80::/ { print $2; exit }'
 }
 
-install_firstboot_run() {
+install_firstboot_run() { # <root>
     local _root="${1:-}"
     if [ -z "${_root}" ]
     then
@@ -63,9 +63,14 @@ gen_ula() {
 }
 
 # Generate 64-bit IPv6 suffix from pseudo-base32 ID
-get_ipv6_suffix() {
+get_ipv6_suffix() { # <id>
+    local _id="${1:-}"
+    if [ -z "${_id}" ]
+    then
+        _fatal "Usage: get_ipv6_suffix <id>"
+    fi
     printf '%04x:%04x:%04x:%04x\n' $(
-        awk -v x="${1}" '
+        awk -v x="${_id}" '
             BEGIN {
                 c = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
                 for (i=0;i<length(c);i++) {
@@ -84,7 +89,7 @@ get_ipv6_suffix() {
 }
 
 # Increment counter from file
-increment_counter() {
+increment_counter() { # <file>
     local _file="${1:-}"
     if [ -z "${_file}" ]
     then
@@ -98,7 +103,7 @@ EOM
 }
 
 # Set counter (only set forwards)
-set_counter() {
+set_counter() { # <file> <value>
     local _file="${1:-}"
     local _value="${2:-}"
     if [ -z "${_file}" ]

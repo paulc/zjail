@@ -1,6 +1,6 @@
 ### Setup environment
 
-create_zfs_datasets () {
+create_zfs_datasets() { #
     _silent /sbin/zfs list -H -o name \'"${ZJAIL_ROOT_DATASET}"\' && _fatal "Dataset ${ZJAIL_ROOT_DATASET} exists"
     _check /sbin/zfs create -o compression=lz4 -o mountpoint=\'"/${ZJAIL}"\' -p \'"${ZJAIL_ROOT_DATASET}"\'
     _check /sbin/zfs create -p \'"${ZJAIL_DIST_DATASET}"\'
@@ -12,7 +12,7 @@ create_zfs_datasets () {
 
 ### Releases
 
-fetch_release() {
+fetch_release() { # [os_release]
     local _release="${1:-${OS_RELEASE}}"
     _silent /bin/test -d \'"${ZJAIL_DIST}"\' || _fatal "ZJAIL_DIST [${ZJAIL_DIST}] not found"
     _check /sbin/zfs create -p \'"${ZJAIL_DIST_DATASET}/${_release}"\'

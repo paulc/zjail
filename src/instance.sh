@@ -1,11 +1,11 @@
 
 ### Instances
 
-list_instances() {
+list_instances() { #
     /sbin/zfs list -H -r -o zjail:id "${ZJAIL_RUN_DATASET}" | sed -e '/^-/d'
 }
 
-list_instance_details() {
+list_instance_details() { # [instance_id]
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
@@ -64,11 +64,11 @@ list_instance_details() {
     fi
 }
 
-edit_jail_conf() {
+edit_jail_conf() { # <instance_id>
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
-        _fatal "Usage: $0 edit_jail_conf <instance>"
+        _fatal "Usage: $0 edit_jail_conf <instance_id>"
     fi
 
     # Check we have a valid instance
@@ -83,11 +83,11 @@ edit_jail_conf() {
     _check /bin/rm -f ${_tmpfile}
 }
 
-start_instance() {
+start_instance() { # <instance_id>
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
-        _fatal "Usage: $0 start_instance <instance>"
+        _fatal "Usage: $0 start_instance <instance_id>"
     fi
 
     # Check we have a valid instance
@@ -107,11 +107,11 @@ start_instance() {
     _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail ${_jail_verbose} -f - -c ${_instance_id} >&2
 }
 
-stop_instance() {
+stop_instance() { # <instance_id>
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
-        _fatal "Usage: $0 stop_instance <instance>"
+        _fatal "Usage: $0 stop_instance <instance_id>"
     fi
 
     _silent /sbin/zfs get -H -o value zjail:id \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' || _fatal "INSTANCE [${_instance_id}] not found"
@@ -133,11 +133,11 @@ stop_instance() {
     cleanup_mounts "${_instance_id}"
 }
 
-destroy_instance() {
+destroy_instance() { # <instance_id>
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
-        _fatal "Usage: $0 destroy_instance <instance>"
+        _fatal "Usage: $0 destroy_instance <instance_id>"
     fi
 
     _silent /sbin/zfs get -H -o value zjail:id \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' || _fatal "INSTANCE [${_instance_id}] not found"
@@ -163,12 +163,12 @@ destroy_instance() {
     _check /sbin/zfs destroy -r \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
 }
 
-set_hostname() {
+set_hostname() { # <instance_id> <hostname>
     local _instance_id="${1:-}"
     local _hostname="${2:-}"
     if [ -z "${_instance_id}" -o -z "${_hostname}" ]
     then
-        _fatal "Usage: $0 set_hostname <instance> <hostname>"
+        _fatal "Usage: $0 set_hostname <instance_id> <hostname>"
     fi
 
     # Check we have a valid instance
@@ -188,11 +188,11 @@ set_hostname() {
     fi
 }
 
-set_autostart() {
+set_autostart() { # <instance_id>
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
-        _fatal "Usage: $0 set_autostart <instance>"
+        _fatal "Usage: $0 set_autostart <instance_id>"
     fi
 
     # Check we have a valid instance
@@ -202,11 +202,11 @@ set_autostart() {
     _check /sbin/zfs set zjail:autostart=\'on\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
 }
 
-clear_autostart() {
+clear_autostart() { # <instance_id>
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
-        _fatal "Usage: $0 clear_autostart <instance>"
+        _fatal "Usage: $0 clear_autostart <instance_id>"
     fi
 
     # Check we have a valid instance
@@ -216,7 +216,7 @@ clear_autostart() {
     _check /sbin/zfs set zjail:autostart=\'off\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
 }
 
-autostart() {
+autostart() { #
     for _instance_id in $(_run /sbin/zfs list -r -H -o zjail:autostart,name \'"${ZJAIL_RUN_DATASET}"\' | sed -ne 's/^on.*\///p')
     do
         if _silent /usr/sbin/jls -j "${_instance_id}" jid
@@ -228,11 +228,11 @@ autostart() {
     done
 }
 
-cleanup_mounts() {
+cleanup_mounts() { # <instance_id>
     local _instance_id="${1:-}"
     if [ -z "${_instance_id}" ]
     then
-        _fatal "Usage: $0 cleanup_mounts <instance>"
+        _fatal "Usage: $0 cleanup_mounts <instance_id>"
     fi
 
     # Need to deal with possible spaces in mount point so we use libxo XML output

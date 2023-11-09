@@ -45,9 +45,9 @@ _firstboot_run='
 
 name="firstboot_run"
 rcvar="firstboot_run_enable"
-start_cmd="firstboot_run"
+start_cmd="_firstboot_run"
 
-firstboot_run() {
+_firstboot_run() {
     printf "Running firstboot_run scripts:\n"
     for x in $(/bin/ls /var/firstboot_run.d)
     do
