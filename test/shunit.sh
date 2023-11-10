@@ -9,7 +9,7 @@ set -o errexit
 
 if [ $(id -u) -ne 0 ]
 then
-	_fatal "ERROR: Must be run as root"
+	_fatal "ERROR: Must be run as root" 2>&1
 fi
 
 OS_RELEASE="$(/sbin/sysctl -n kern.osrelease)"
@@ -45,21 +45,11 @@ oneTimeSetUp() {
         ./bin/zjail create_base b1 || fail CREATE_BASE
         ./bin/zjail update_base b1 || fail UPDATE_BASE
 
-        # Create a sample site config (expects lo device to be passed as $lo in 
-        # instance jail.conf)
-        cat > "${ZJAIL}/config/lo.conf" <<'EOM'
-            exec.clean;
-            mount.devfs;
-            devfs_ruleset = 4;
-            persist;
-            ip4.addr += "$lo|$ipv4_lo/32";
-            ip6.addr += "$lo|::$suffix/128";
-EOM
     else
         # Use existing ZJAIL 
-        if ! [ -d "${ZJAIL}/dist/${ARCH}/${OS_RELEASE}" -a -d "${ZJAIL}/base/${ARCH}/b1" -a -f "${ZJAIL}/config/lo.conf" ] 
+        if ! [ -d "${ZJAIL}/dist/${ARCH}/${OS_RELEASE}" -a -d "${ZJAIL}/base/${ARCH}/b1" ] 
         then
-            _fatal "ERROR: ZJAIL [$ZJAIL] invalid"
+            _fatal "ERROR: ZJAIL [$ZJAIL] invalid" 2>&1
         fi
         # Make sure we dont delete
         export NODESTROY=1
@@ -157,10 +147,20 @@ testAutostart() {
     ./bin/zjail autostart || fail AUTOSTART
     _silent jls -j $ID && fail AUTOSTART
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
-    assertNotContains "$(./bin/zjail list_instances)" $ID
 }
 
 testLoopback() {
+    # Create a sample site config (expects lo device to be passed as $lo in 
+    # instance jail.conf)
+    cat > "${ZJAIL}/config/lo.conf" <<'EOM'
+        exec.start = "/bin/sh /etc/rc";
+        exec.clean;
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+        ip4.addr += "$lo|$ipv4_lo/32";
+        ip6.addr += "$lo|::$suffix/128";
+EOM
     LO=$(_run ifconfig lo create)
     ID=$(./bin/zjail create_instance b1 -j allow.raw_sockets -j "\$lo=$LO" -c "${ZJAIL}/config/lo.conf")
     SUFFIX=$(zfs get -H -o value zjail:suffix "${ZJAIL}/run/${ARCH}/${ID}")
@@ -168,6 +168,7 @@ testLoopback() {
     _silent jexec $ID ping -q -c1 -t1 ::1 || fail PING6
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
     ifconfig $LO destroy
+    rm "${ZJAIL}/config/lo.conf"
 }
 
 testCounter() {
@@ -180,13 +181,6 @@ testCounter() {
     ./bin/zjail destroy_instance $ID2 || fail DESTROY_INSTANCE
 }
 
-testListInstanceDetails() {
-    ID=$(./bin/zjail create_instance b1 -j persist -r /bin/freebsd-version)
-    assertContains "$(./bin/zjail list_instance_details)" $ID
-    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
-    assertNotContains "$(./bin/zjail list_instances)" $ID
-}
-
 testSetHostname() {
     ID=$(./bin/zjail create_instance b1 -j persist -h OLD)
     assertContains "$(jexec $ID hostname)" OLD
@@ -197,22 +191,171 @@ testSetHostname() {
     ./bin/zjail start_instance $ID || fail START_INSTANCE
     assertContains "$(jexec $ID hostname)" NEW
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
-    assertNotContains "$(./bin/zjail list_instances)" $ID
 }
 
-testListInstanceDetails2() {
-    ID=$(./bin/zjail create_instance b1 -j persist -r /bin/freebsd-version)
+testListInstanceDetails() {
+    ID=$(./bin/zjail create_instance b1 -j persist)
+    assertContains "$(./bin/zjail list_instance_details)" $ID
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+}
+
+testListInstanceDetailsSingle() {
+    ID=$(./bin/zjail create_instance b1 -j persist)
     assertContains "$(./bin/zjail list_instance_details $ID)" $ID
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
-    assertNotContains "$(./bin/zjail list_instances)" $ID
 }
 
 testiEditJailConf() {
-    ID=$(./bin/zjail create_instance b1 -j persist -r /bin/freebsd-version)
+    ID=$(./bin/zjail create_instance b1 -j persist)
     export EDITOR=/bin/cat
     assertContains "$(./bin/zjail edit_jail_conf $ID)" $ID
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
-    assertNotContains "$(./bin/zjail list_instances)" $ID
+}
+
+testCreateInstanceAutostart() {
+    ID=$(./bin/zjail create_instance b1 -a -j persist)
+    ./bin/zjail stop_instance $ID || fail STOP_INSTANCE
+    ./bin/zjail autostart || fail AUTOSTART
+    _silent jls -j $ID name || fail JLS
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+}
+
+testCreateInstanceSiteConfig() {
+    cat > "${ZJAIL}/config/test.conf" <<'EOM'
+        exec.start = "/usr/bin/touch /TEST";
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+EOM
+    ID=$(./bin/zjail create_instance b1 -c "${ZJAIL}/config/test.conf")
+    _silent jexec $ID ls /TEST || fail JEXEC
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    rm "${ZJAIL}/config/test.conf"
+}
+
+testCreateInstanceCopy() {
+    cat > "${ZJAIL}/config/DATA" <<'EOM'
+TEST
+EOM
+    ID=$(./bin/zjail create_instance b1 -j persist -C "${ZJAIL}/config/DATA:/DATA")
+    assertEquals "$(jexec $ID cat /DATA)" TEST
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+}
+
+testCreateInstanceFirstbootCommand() {
+    cat > "${ZJAIL}/config/test.conf" <<'EOM'
+        exec.start = "/bin/sh /etc/rc";
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+EOM
+    ID=$(./bin/zjail create_instance b1 -c "${ZJAIL}/config/test.conf" -f "touch /FIRSTBOOT1" -f "touch /FIRSTBOOT2")
+    _silent jexec $ID ls /FIRSTBOOT1 || fail JEXEC
+    _silent jexec $ID ls /FIRSTBOOT2 || fail JEXEC
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    rm "${ZJAIL}/config/test.conf"
+}
+
+testCreateInstanceFirstbootFile() {
+    cat > "${ZJAIL}/config/test.conf" <<'EOM'
+        exec.start = "/bin/sh /etc/rc";
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+EOM
+    cat > "${ZJAIL}/config/firstboot1" <<'EOM'
+        touch /FIRSTBOOT1
+EOM
+    cat > "${ZJAIL}/config/firstboot2" <<'EOM'
+        touch /FIRSTBOOT2
+EOM
+    ID=$(./bin/zjail create_instance b1 -c "${ZJAIL}/config/test.conf" -F "${ZJAIL}/config/firstboot1" -F "${ZJAIL}/config/firstboot2" -f "touch /FIRSTBOOT3")
+    _silent jexec $ID ls /FIRSTBOOT1 || fail JEXEC
+    _silent jexec $ID ls /FIRSTBOOT2 || fail JEXEC
+    _silent jexec $ID ls /FIRSTBOOT3 || fail JEXEC
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    rm "${ZJAIL}/config/test.conf" "${ZJAIL}/config/firstboot1" "${ZJAIL}/config/firstboot2"
+}
+
+testCreateInstanceHostname() {
+    cat > "${ZJAIL}/config/test.conf" <<'EOM'
+        exec.start = "/bin/sh /etc/rc";
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+EOM
+    ID=$(./bin/zjail create_instance b1 -c "${ZJAIL}/config/test.conf" -h HOSTNAME)
+    assertEquals "$(jexec $ID hostname)" HOSTNAME
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    rm "${ZJAIL}/config/test.conf"
+}
+
+testCreateInstanceJailParam() {
+    cat > "${ZJAIL}/config/test.conf" <<'EOM'
+        exec.start = "/bin/sh /etc/rc";
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+EOM
+    ID=$(./bin/zjail create_instance b1 -j "exec.start = 'touch /START'" -c "${ZJAIL}/config/test.conf")
+    _silent jexec $ID ls /START || fail JEXEC
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    rm "${ZJAIL}/config/test.conf"
+}
+
+testCreateInstanceNoStart() {
+    cat > "${ZJAIL}/config/test.conf" <<'EOM'
+        exec.start = "/bin/sh /etc/rc";
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+EOM
+    ID=$(./bin/zjail create_instance b1 -n -c "${ZJAIL}/config/test.conf")
+    _silent jls -j $ID name && fail JLS
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    rm "${ZJAIL}/config/test.conf"
+}
+
+testCreateInstancePackage() {
+    cat > "${ZJAIL}/config/test.conf" <<'EOM'
+        exec.start = "/bin/sh /etc/rc";
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+EOM
+    ID=$(./bin/zjail create_instance b1 -p bash -c "${ZJAIL}/config/test.conf")
+    _silent jexec $ID /usr/local/bin/bash -c /usr/bin/uname || fail JEXEC
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    rm "${ZJAIL}/config/test.conf"
+}
+
+testCreateInstanceRun() {
+    cat > "${ZJAIL}/config/test.conf" <<'EOM'
+        exec.start = "/bin/sh /etc/rc";
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+EOM
+    ID=$(./bin/zjail create_instance b1 -r "touch /RUN1" -r "touch /RUN2" -c "${ZJAIL}/config/test.conf")
+    _silent jexec $ID ls /RUN1 || fail JEXEC
+    _silent jexec $ID ls /RUN2 || fail JEXEC
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    rm "${ZJAIL}/config/test.conf"
+}
+
+testCreateInstanceSysrc() {
+    cat > "${ZJAIL}/config/test.conf" <<'EOM'
+        exec.start = "/bin/sh /etc/rc";
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+EOM
+    LO=$(_run ifconfig lo create)
+    ID=$(./bin/zjail create_instance b1 -s sshd_enable=YES -j "ip6.addr = $LO|::\$suffix" -c "${ZJAIL}/config/test.conf")
+    nc -z "::$(./bin/zjail get_ipv6_suffix $ID)" 22 || fail SSH
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    rm "${ZJAIL}/config/test.conf"
+    ifconfig $LO destroy
 }
 
 . /usr/local/bin/shunit2

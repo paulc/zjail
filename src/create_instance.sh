@@ -8,6 +8,7 @@ create_instance() { # <base|release> [options]
     [-F <file>]..                       # Install firstboot file
     [-h <hostname>]                     # Set hostname
     [-j <jail_param>]..                 # Set jail parameters
+    [-n]                                # Create but dont start instance
     [-p <pkg>]..                        # Install pkg
     [-r <cmd>]..                        # Run cmd (alias for -j 'exec.start = <cmd>')
     [-s <sysrc>]..                      # Set rc.local parameter (through sysrc)
@@ -84,8 +85,9 @@ create_instance() { # <base|release> [options]
     local _firstboot_id=0
     local _run=0
     local _wheel=""
+    local _start=1
 
-    while getopts "ac:C:f:F:h:j:p:r:s:S:u:Uw" _opt; do
+    while getopts "ac:C:f:F:h:j:np:r:s:S:u:Uw" _opt; do
         case "${_opt}" in
             a)
                 # Autostart
@@ -144,6 +146,10 @@ create_instance() { # <base|release> [options]
             j)
                 # Add jail param
                 _jail_params="$(printf '%s\n    %s;' "${_jail_params}" "${OPTARG}")"
+                ;;
+            n)  
+                # Dont start instance
+                _start=0
                 ;;
             p)
                 # Install pkg
@@ -280,13 +286,16 @@ ${_instance_id} {
 
     _check /sbin/zfs snapshot \'"${ZJAIL_RUN_DATASET}/${_instance_id}@$(date -u +'%Y-%m-%dT%H:%M:%SZ')"\'
 
-    local _jail_verbose=""
-    if [ -n "$DEBUG" ]
+    if [ "${_start}" = "1" ] 
     then
-        _jail_verbose="-v"
-    fi
+        local _jail_verbose=""
+        if [ -n "$DEBUG" ]
+        then
+            _jail_verbose="-v"
+        fi
 
-    _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| /usr/sbin/jail ${_jail_verbose} -f - -c ${_instance_id} >&2
+        _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| /usr/sbin/jail ${_jail_verbose} -f - -c ${_instance_id} >&2
+    fi
 
     trap - EXIT
     printf '%s\n' $_instance_id

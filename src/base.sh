@@ -25,23 +25,6 @@ update_base() { # <base>
     fi
     _silent /bin/test -d \'"${ZJAIL_BASE}/${_name}"\' || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
 
-    # Get primary ipv4/ipv6 addresses - we check default route and 1.1.1.1 / ::/1 in case we have wireguard tunnel
-    local _ipv4_default="$(get_default_ipv4)"
-    local _ipv6_default="$(get_default_ipv6)"
-    local _jail_ip=""
-    if [ -n "${_ipv4_default}" ]
-    then
-        _jail_ip="ip4.addr=${_ipv4_default}"
-    fi
-    if [ -n "${_ipv6_default}" ]
-    then
-        _jail_ip="${_jail_ip} ip6.addr=${_ipv6_default}"
-    fi
-    if [ -z "${_jail_ip}" ]
-    then
-        _fatal "Cant find ipv4/ipv6 default addresses"
-    fi
-
     # Copy local resolv.conf (will be cleaned up in chroot script
     if [ -f "${ZJAIL_BASE}/${_name}/etc/resolv.conf" ]
     then
@@ -88,12 +71,21 @@ chroot_base() { # <base> [cmd]..
     fi
     _silent /bin/test -d \'"${ZJAIL_BASE}/${_name}"\' || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
 
+    # Mount devfs in base
+    _check /sbin/mount -tdevfs -o ruleset=4 devfs \'"${ZJAIL_BASE}/${_name}/dev"\'
+
     shift
     if [ "$#" -gt 0 ]
     then
         _run /usr/sbin/chroot \'"${ZJAIL_BASE}/${_name}"\' "$@"
     else
         _run /usr/sbin/chroot \'"${ZJAIL_BASE}/${_name}"\' /bin/sh
+    fi
+
+    # Unmount devfs
+    if [ -r "${ZJAIL_BASE}/${_name}/dev/null" ]
+    then
+        _check /sbin/umount -f \'"${ZJAIL_BASE}/${_name}/dev"\'
     fi
 
 	snapshot_base "${_name}"
