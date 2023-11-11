@@ -23,7 +23,7 @@ install_firstboot_run() { # <root>
     fi
     _check /bin/chmod 755 \'"${_root}/usr/local/etc/rc.d/firstboot_run"\'
     _check /usr/bin/touch \'"${_root}/firstboot"\'
-    _check /usr/sbin/chroot \'"${_root}"\' /usr/sbin/sysrc firstboot_run_enable=YES
+    _check /usr/sbin/chroot \'"${_root}"\' /usr/sbin/sysrc firstboot_run_enable=YES >&2
 }
 
 # Generate random 64-bit ID as 13 character base32 encoded string

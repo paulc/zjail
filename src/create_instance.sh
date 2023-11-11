@@ -112,7 +112,7 @@ create_instance() { # <base|release> [options]
                 fi
                 local _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
                 _log_message "firstboot_file: ${_firstboot_file}"
-                echo "${OPTARG}" | _check /usr/bin/tee \'"${_firstboot_file}"\'
+                echo "${OPTARG}" | _check /usr/bin/tee \'"${_firstboot_file}"\' >&2
                 _firstboot_id=$(($_firstboot_id + 1))
                 ;;
             F)
@@ -135,7 +135,7 @@ create_instance() { # <base|release> [options]
                     then
                         _fatal "Run file [${OPTARG}] not found"
                     fi
-                    cat "${OPTARG}" | _check /usr/bin/tee \'"${_firstboot_file}"\'
+                    cat "${OPTARG}" | _check /usr/bin/tee \'"${_firstboot_file}"\' >&2
                 fi
                 _firstboot_id=$(($_firstboot_id + 1))
                 ;;
@@ -189,7 +189,7 @@ create_instance() { # <base|release> [options]
                 ;;
             s)
                 # Run sysrc
-                _check /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/sysrc \'"${OPTARG}"\'
+                _check /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/sysrc \'"${OPTARG}"\' >&2
                 ;;
             S)
                 # Copy file from host filtering througfh envsubst(1)
