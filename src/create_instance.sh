@@ -168,10 +168,10 @@ create_instance() { # <base|release> [options]
                 _log /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg -N
                 if [ $? -ne 0 ]
                 then
-                    _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg bootstrap
+                    _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg bootstrap >&2
                 fi
 
-                _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg install \'"${OPTARG}"\'
+                _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg install \'"${OPTARG}"\' >&2
 
                 _check /sbin/umount \'"${ZJAIL_RUN}/${_instance_id}/dev"\'
                 ;;
