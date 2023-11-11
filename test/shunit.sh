@@ -205,7 +205,7 @@ testListInstanceDetailsSingle() {
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
 }
 
-testiEditJailConf() {
+testEditJailConf() {
     ID=$(./bin/zjail create_instance b1 -j persist)
     export EDITOR=/bin/cat
     assertContains "$(./bin/zjail edit_jail_conf $ID)" $ID
@@ -357,6 +357,46 @@ EOM
     rm "${ZJAIL}/config/test.conf"
     ifconfig $LO destroy
 }
+
+testCreateInstanceEnvsubst() {
+    if [ -x /usr/local/bin/envsubst ]
+    then
+        cat > "${ZJAIL}/config/ENVSUBST" <<'EOM'
+${ABCD}
+EOM
+        export ABCD=TEST
+        ID=$(./bin/zjail create_instance b1 -j persist -S "${ZJAIL}/config/ENVSUBST:/ENVSUBST")
+        assertEquals "$(jexec $ID cat /ENVSUBST)" TEST
+        ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    fi
+}
+
+testCreateInstanceAddUser() {
+    # Create two users - one not in the wheel group (test1) and one in (test2)
+    ID=$(./bin/zjail create_instance b1 -j persist -u 'test1:TEST1_PK' -w -u 'test2:TEST2_PK')
+    assertNotContains "$(jexec $ID id -Gn test1)" wheel
+    assertContains "$(jexec $ID id -Gn test2)" wheel
+    assertEquals "$(jexec $ID stat -f %Sp /home/test1/.ssh)" "drwx------"
+    assertEquals "$(jexec $ID stat -f %Sp /home/test2/.ssh)" "drwx------"
+    assertEquals "$(jexec $ID stat -f %Sp /home/test1/.ssh/authorized_keys)" "-rw-------"
+    assertEquals "$(jexec $ID stat -f %Sp /home/test2/.ssh/authorized_keys)" "-rw-------"
+    assertEquals "$(jexec $ID cat /home/test1/.ssh/authorized_keys)" TEST1_PK
+    assertEquals "$(jexec $ID cat /home/test2/.ssh/authorized_keys)" TEST2_PK
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+}
+
+testCreateInstanceUpdate() {
+    # Should have been updated when created
+    ID1=$(./bin/zjail create_instance b1 -j persist)
+    ID2=$(./bin/zjail create_instance ${OS_RELEASE} -U -j persist)
+    V1=$(jexec $ID1 /bin/freebsd-version)
+    V2=$(jexec $ID2 /bin/freebsd-version)
+    assertEquals "${V1}" "${V2}"
+    ./bin/zjail destroy_instance $ID1 || fail DESTROY_INSTANCE
+    ./bin/zjail destroy_instance $ID2 || fail DESTROY_INSTANCE
+}
+
+
 
 . /usr/local/bin/shunit2
 
