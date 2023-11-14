@@ -396,7 +396,60 @@ testCreateInstanceUpdate() {
     ./bin/zjail destroy_instance $ID2 || fail DESTROY_INSTANCE
 }
 
+testBuildNonPersistent() {
+    cat > "${ZJAIL}/config/build-test" <<EOM
+BASE b1
+RUN /bin/freebsd-version
+EOM
+    ID=$(./bin/zjail build "${ZJAIL}/config/build-test")
+    assertContains "$(./bin/zjail list_instances)" $ID
+    _silent jls -j $ID && fail JLS
+    ./bin/zjail stop_instance $ID || fail STOP_INSTANCE
+    ./bin/zjail start_instance $ID || fail START_INSTANCE
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    assertNotContains "$(./bin/zjail list_instances)" $ID
+}
 
+
+testBuildFromRelease() {
+    cat > "${ZJAIL}/config/build-test" <<EOM
+BASE ${OS_RELEASE}
+RUN /bin/freebsd-version
+EOM
+    ID=$(./bin/zjail build "${ZJAIL}/config/build-test")
+    assertContains "$(./bin/zjail list_instances)" $ID
+    _silent jls -j $ID && fail JLS
+    ./bin/zjail stop_instance $ID || fail STOP_INSTANCE
+    ./bin/zjail start_instance $ID || fail START_INSTANCE
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    assertNotContains "$(./bin/zjail list_instances)" $ID
+}
+
+testBuildInvalidBase() {
+    cat > "${ZJAIL}/config/build-test" <<EOM
+BASE INVALID
+JAIL_PARAM persist
+RUN /bin/freebsd-version
+EOM
+    ID=$(./bin/zjail build "${ZJAIL}/config/build-test") && fail INVALID
+    return 0
+}
+
+testBuildPersistent() {
+    cat > "${ZJAIL}/config/build-test" <<EOM
+BASE b1
+JAIL_PARAM persist
+RUN /bin/freebsd-version
+EOM
+    ID=$(./bin/zjail build "${ZJAIL}/config/build-test")
+    assertContains "$(./bin/zjail list_instances)" $ID
+    _silent jls -j $ID || fail JLS
+    ./bin/zjail stop_instance $ID || fail STOP_INSTANCE
+    ./bin/zjail start_instance $ID || fail START_INSTANCE
+    ./bin/zjail start_instance $ID || fail START_INSTANCE
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    assertNotContains "$(./bin/zjail list_instances)" $ID
+}
 
 . /usr/local/bin/shunit2
 
