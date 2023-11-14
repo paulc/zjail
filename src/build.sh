@@ -1,30 +1,34 @@
 
-create_instance() { # <base|release> [options]
-    local _usage="$0 create_instance <base|release>
-    [-a]                                # Set sutostart flag
-    [-c <site_config>]                  # Set jail.conf template
-    [-C <host_path>:<instance_path>]..  # Copy files from host to instance
-    [-f <cmd>]..                        # Install firstboot cmd
-    [-F <file>]..                       # Install firstboot file
-    [-h <hostname>]                     # Set hostname
-    [-j <jail_param>]..                 # Set jail parameters
-    [-n]                                # Create but dont start instance
-    [-p <pkg>]..                        # Install pkg
-    [-r <cmd>]..                        # Run cmd (alias for -j 'exec.start = <cmd>')
-    [-s <sysrc>]..                      # Set rc.local parameter (through sysrc)
-    [-S <host_path>:<instance_path>]..  # Copy files filtering through envsubst(1)
-    [-u '<user>:<pk>']..                # Add user/pk (note: pk needs to be quoted)
-    [-U]                                # Update instance on firstboot
-    [-w]                                # Add subsequent users to 'wheel' group
-"
-    case "${1:-}" in
-        -h|-help|--help|help) _fatal "Usage: ${_usage}"
-        ;;
-    esac
+build() { # <build-file>
 
-    local _base="${1:-}"
-    shift
+    local _usage="$0 build <build-file>"
+    local _build_file="${1:-}"
 
+    if [ -z "${_build_file}" ]
+    then
+        _fatal "Usage: ${_usage}"
+    fi
+
+    if [ "${_build_file}" = "-" ]
+    then
+        # Use STDIN
+        _build_file="/dev/stdin"
+    elif [ ! -r "${_build_file}" ]
+    then
+        _fatal "ERROR: Build file not readable [${_build_file}]"
+    fi
+
+    # Strip comments and blank lines
+    sed -e '/^#/d' -e '/^[[:space:]]*$/d' "${_build_file}" | (
+
+    # Expect BASE as first line
+    read _option _base
+    if [ "${_option}" != "BASE" ]
+    then
+        _fatal "Expected BASE on first line"
+    fi
+
+    # Create image
     if [ -z "${_base}" ]
     then
         _fatal "Usage: ${_usage}"
@@ -87,7 +91,10 @@ create_instance() { # <base|release> [options]
     local _wheel=""
     local _start=1
 
-    while getopts "ac:C:f:F:h:j:np:r:s:S:u:Uw" _opt; do
+    local _opt=""
+    # We reuse option processing from create_instance so use OPTARG 
+    while read _opt OPTARG
+    do
         case "${_opt}" in
             a|AUTOSTART)
                 # Autostart
@@ -237,7 +244,7 @@ create_instance() { # <base|release> [options]
                 _wheel="-G wheel"
                 ;;
             *)
-                _fatal "Usage: ${_usage}"
+                _fatal "INVALID OPTION: ${_opt} ${OPTARG}"
                 ;;
         esac
     done
@@ -291,4 +298,7 @@ ${_instance_id} {
 
     trap - EXIT
     printf '%s\n' $_instance_id
+
+    )
 }
+

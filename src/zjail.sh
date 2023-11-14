@@ -16,6 +16,7 @@ COLOUR="${COLOUR:-}"
 # INSERT: base.sh
 # INSERT: instance.sh
 # INSERT: create_instance.sh
+# INSERT: build.sh
 MERGED=""
 
 # For testing
@@ -29,6 +30,7 @@ then
     . "${_src}/base.sh"
     . "${_src}/instance.sh"
     . "${_src}/create_instance.sh"
+    . "${_src}/build.sh"
 
     # We havent extracted subcommand logic so just try to run cmd
     cmd="${1}"

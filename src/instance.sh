@@ -223,7 +223,7 @@ autostart() { #
         then
             echo "INSTANCE [${_instance_id}] running"
         else
-            _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail -vf - -c ${_instance_id}
+            _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail -f - -c ${_instance_id} >&2
         fi
     done
 }

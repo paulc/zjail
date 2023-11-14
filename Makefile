@@ -7,7 +7,8 @@ SRC := Makefile \
 	   src/setup.sh \
 	   src/base.sh \
 	   src/instance.sh \
-	   src/create_instance.sh
+	   src/create_instance.sh \
+	   src/build.sh
 
 USAGE != mktemp
 CMDS != mktemp
@@ -29,6 +30,7 @@ bin/zjail: $(SRC)
 		-e '/INSERT: base.sh/r src/base.sh' \
 		-e '/INSERT: instance.sh/r src/instance.sh' \
 		-e '/INSERT: create_instance.sh/r src/create_instance.sh' \
+		-e '/INSERT: build.sh/r src/build.sh' \
 		-e '/INSERT: USAGE/r $(USAGE)' \
 		-e '/INSERT: CMDS/r $(CMDS)' \
 		-e 's/^MERGED=.*/MERGED=1/' \
