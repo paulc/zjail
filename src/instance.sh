@@ -15,7 +15,7 @@ list_instance_details() { # [instance_id]
                 IFS="	"
                 local _id _hostname _counter _suffix _base _autostart
                 local _header="1"
-                while read _id _hostname _counter _suffix _base _autostart
+                while read -r _id _hostname _counter _suffix _base _autostart
                 do
                     if [ -n "${_header}" ]
                     then
@@ -23,7 +23,8 @@ list_instance_details() { # [instance_id]
                         _header=""
                     fi
 
-                    local _jid=$(jls -j "${_id}" jid 2>/dev/null)
+                    local _jid
+                    _jid=$(jls -j "${_id}" jid 2>/dev/null)
                     if [ -n "${_jid}" ]
                     then
                         local _status="RUNNING [${_jid}]"
@@ -42,8 +43,9 @@ list_instance_details() { # [instance_id]
             (
                 IFS="	"
                 local _id _hostname _counter _suffix _loopback _base _autostart
-                read _id _hostname _counter _suffix _loopback _base _autostart
-                local _jid=$(jls -j "${_id}" jid 2>/dev/null)
+                read -r _id _hostname _counter _suffix _loopback _base _autostart
+                local _jid
+                _jid=$(jls -j "${_id}" jid 2>/dev/null)
                 if [ -n "${_jid}" ]
                 then
                     local _status="RUNNING [${_jid}]"
@@ -73,14 +75,17 @@ edit_jail_conf() { # <instance_id>
 
     # Check we have a valid instance
     _silent /sbin/zfs get -H -o value zjail:id \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' || _fatal "INSTANCE [${_instance_id}] not found"
-    local _tmpfile=$(_run /usr/bin/mktemp) || _fatal "Cant create TMPFILE"
+    local _tmpfile
+    _tmpfile=$(_run /usr/bin/mktemp) || _fatal "Cant create TMPFILE"
+    # shellcheck ignore=SC2064
     trap "/bin/rm -f ${_tmpfile}" EXIT
-    _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \> ${_tmpfile}
-    _run ${EDITOR:-/usr/bin/vi} \'"${_tmpfile}"\'
-    local _jail_conf="$(cat ${_tmpfile})"
+    _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \> "${_tmpfile}"
+    _run "${EDITOR:-/usr/bin/vi}" \'"${_tmpfile}"\'
+    local _jail_conf
+    _jail_conf="$(cat "${_tmpfile}")"
     _log_cmdline /sbin/zfs set zjail:conf=\'"${_jail_conf}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
     /sbin/zfs set zjail:conf="${_jail_conf}" "${ZJAIL_RUN_DATASET}/${_instance_id}" || _fatal "Cant set zjail:conf property"
-    _check /bin/rm -f ${_tmpfile}
+    _check /bin/rm -f "${_tmpfile}"
 }
 
 start_instance() { # <instance_id>
@@ -104,7 +109,7 @@ start_instance() { # <instance_id>
         _jail_verbose="-v"
     fi
 
-    _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail ${_jail_verbose} -f - -c ${_instance_id} >&2
+    _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail ${_jail_verbose} -f - -c "${_instance_id}" >&2
 }
 
 stop_instance() { # <instance_id>
@@ -127,7 +132,7 @@ stop_instance() { # <instance_id>
         _jail_verbose="-v"
     fi
 
-    _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail ${_jail_verbose} -f - -r ${_instance_id} >&2
+    _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail ${_jail_verbose} -f - -r "${_instance_id}" >&2
 
     # Cleanup any mounts
     cleanup_mounts "${_instance_id}"
@@ -150,7 +155,7 @@ destroy_instance() { # <instance_id>
 
     # XXX Check for flag before shutting down??
     _silent /usr/sbin/jls -j "${_instance_id}" jid && \
-        _log /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail ${_jail_verbose} -f - -r ${_instance_id} >&2
+        _log /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail ${_jail_verbose} -f - -r "${_instance_id}" >&2
 
     # Cleanup any mounts
     cleanup_mounts "${_instance_id}"
@@ -166,7 +171,7 @@ destroy_instance() { # <instance_id>
 set_hostname() { # <instance_id> <hostname>
     local _instance_id="${1:-}"
     local _hostname="${2:-}"
-    if [ -z "${_instance_id}" -o -z "${_hostname}" ]
+    if [ -z "${_instance_id}" ] || [ -z "${_hostname}" ]
     then
         _fatal "Usage: $0 set_hostname <instance_id> <hostname>"
     fi
@@ -175,7 +180,8 @@ set_hostname() { # <instance_id> <hostname>
     _silent /sbin/zfs get -H -o value zjail:id \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' || _fatal "INSTANCE [${_instance_id}] not found"
     
     # Modify jail.conf
-    local _jail_conf="$(/sbin/zfs get -H -o value zjail:conf "${ZJAIL_RUN_DATASET}/${_instance_id}" | sed -e "s/\(^[[:space:]]*\$hostname\).*/\1 = \"${_hostname}\";/")"
+    local _jail_conf
+    _jail_conf="$(/sbin/zfs get -H -o value zjail:conf "${ZJAIL_RUN_DATASET}/${_instance_id}" | sed -e "s/\(^[[:space:]]*\$hostname\).*/\1 = \"${_hostname}\";/")"
     _check /sbin/zfs set zjail:conf=\'"${_jail_conf}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
     
     # Update zfs property
@@ -223,7 +229,7 @@ autostart() { #
         then
             echo "INSTANCE [${_instance_id}] running"
         else
-            _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail -f - -c ${_instance_id} >&2
+            _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| jail -f - -c "${_instance_id}" >&2
         fi
     done
 }
@@ -236,6 +242,6 @@ cleanup_mounts() { # <instance_id>
     fi
 
     # Need to deal with possible spaces in mount point so we use libxo XML output
-    _run /sbin/mount -t nozfs --libxo xml,pretty | awk -F '<|>' -v id=${_instance_id} '$3 ~ id { system(sprintf("/sbin/umount -f \"%s\"",$3)) }'
+    _run /sbin/mount -t nozfs --libxo xml,pretty | awk -F '<|>' -v id="${_instance_id}" '$3 ~ id { system(sprintf("/sbin/umount -f \"%s\"",$3)) }'
 }
 

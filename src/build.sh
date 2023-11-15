@@ -1,6 +1,5 @@
 
 build() { # <build-file>
-
     local _usage="$0 build <build-file>"
     local _build_file="${1:-}"
 
@@ -28,7 +27,6 @@ build() { # <build-file>
         _fatal "Expected BASE on first line"
     fi
 
-    # Create image
     if [ -z "${_base}" ]
     then
         _fatal "Usage: ${_usage}"

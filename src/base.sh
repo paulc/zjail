@@ -94,14 +94,15 @@ chroot_base() { # <base> [cmd]..
 clone_base() { # <base> <target>
     local _name="${1:-}"
     local _target="${2:-}"
-    if [ -z "${_name}" -o -z "${_target}" ]
+    if [ -z "${_name}" ] || [ -z "${_target}" ]
     then
         _fatal "Usage: clone_base <base> <target>"
     fi
     _silent /bin/test -d \'"${ZJAIL_BASE}/${_name}"\' || _fatal "BASE [${ZJAIL_BASE}/${_name}] not found"
     _silent /bin/test -d \'"${ZJAIL_BASE}/${_target}"\' && _fatal "TARGET [${ZJAIL_BASE}/${_target}] exists"
 
-    local _latest=$(get_latest_snapshot "${_name}")
+    local _latest
+    _latest=$(get_latest_snapshot "${_name}")
     if [ -z "${_latest}" ]
     then
         _fatal "Cant find snapshot: ${ZJAIL_BASE}/${_name}"

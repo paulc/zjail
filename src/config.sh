@@ -31,6 +31,7 @@ ZJAIL_CONFIG="/${ZJAIL}/config"
 DIST_SRC="${DIST_SRC:-http://ftp.freebsd.org/pub/FreeBSD/releases/}"
 
 ### firstboot_run rc.d script
+# shellcheck disable=SC2016
 _firstboot_run='
 #!/bin/sh
 
@@ -64,6 +65,7 @@ load_rc_config $name
 run_rc_command "$1"
 '
 
+# shellcheck disable=SC2016
 _update_instance='
 PAGER="/usr/bin/tail -n0" /usr/sbin/freebsd-update --currently-running $(/bin/freebsd-version) --not-running-from-cron fetch
 if /usr/sbin/freebsd-update updatesready
