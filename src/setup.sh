@@ -1,3 +1,5 @@
+#!/bin/sh
+
 ### Setup environment
 
 create_zfs_datasets() { #

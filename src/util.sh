@@ -1,9 +1,11 @@
+#!/bin/sh
+
 get_default_ipv4() {
-    ifconfig $(sh -c "route -n get default || route -n get 1.1.1.1" 2>/dev/null | awk '/interface:/ { print $2 }') inet | awk '/inet/ { print $2; exit }'
+    ifconfig "$(sh -c "route -n get default || route -n get 1.1.1.1" 2>/dev/null | awk '/interface:/ { print $2 }')" inet | awk '/inet/ { print $2; exit }'
 }
 
 get_default_ipv6() {
-    ifconfig $(sh -c "route -6n get default || route -6n get ::/1" 2>/dev/null | awk '/interface:/ { print $2 }') inet6 | awk '/inet6/ && ! /fe80::/ { print $2; exit }'
+    ifconfig "$(sh -c "route -6n get default || route -6n get ::/1" 2>/dev/null | awk '/interface:/ { print $2 }')" inet6 | awk '/inet6/ && ! /fe80::/ { print $2; exit }'
 }
 
 install_firstboot_run() { # <root>
@@ -34,12 +36,17 @@ gen_id() {
     do
         # Get 2 x 32 bit unsigned ints from /dev/urandom
         # (od doesnt accept -t u8 so we multiply in bc)
+
+        # shellcheck disable=SC2046 (need to split output)
         set -- $(od -v -An -N8 -t u4 /dev/urandom)
+
         # Reserve ::0 to ::ffff for system
-        while [ ${1:-0} -eq 0 -a ${2:-0} -lt 65536 ]
+        while [ "${1:-0}" -eq 0 ] && [ "${2:-0}" -lt 65536 ]
         do
+            # shellcheck disable=SC2046 (need to split output)
             set -- $(od -v -An -N8 -t u4 /dev/urandom)
         done
+
         # Use bc to generate pseudo-base32 encoded string from 64bit uint
         # (Note this isnt a normal base32 and just uses fixed 13 chars (13*5 = 65))
         _id="$(bc -l -e "x = $1 * $2" \
@@ -53,12 +60,14 @@ gen_id() {
 # though in practice this isnt a major problem as we only use to separate
 # loopback devices)
 gen_lo() {
+    # shellcheck disable=SC2046 (need to split output)
     /usr/bin/printf '127.%d.%d.%d\n' $(/usr/bin/od -v -An -N3 -t u1 /dev/urandom)
 }
 
 # Generate random IPv6 Unique Local Address prefix
 gen_ula() {
     # 48-bit ULA address - fdXX:XXXX:XXXX (add /16 subnet id and /64 device address)
+    # shellcheck disable=SC2046 (need to split output)
     printf "fd%s:%s%s:%s%s\n" $(od -v -An -N5 -t x1 /dev/urandom)
 }
 
@@ -69,6 +78,7 @@ get_ipv6_suffix() { # <id>
     then
         _fatal "Usage: get_ipv6_suffix <id>"
     fi
+    # shellcheck disable=SC2046,SC2183
     printf '%04x:%04x:%04x:%04x\n' $(
         awk -v x="${_id}" '
             BEGIN {

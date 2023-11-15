@@ -1,3 +1,4 @@
+#!/bin/sh
 
 ### Instances
 
@@ -77,8 +78,10 @@ edit_jail_conf() { # <instance_id>
     _silent /sbin/zfs get -H -o value zjail:id \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' || _fatal "INSTANCE [${_instance_id}] not found"
     local _tmpfile
     _tmpfile=$(_run /usr/bin/mktemp) || _fatal "Cant create TMPFILE"
-    # shellcheck ignore=SC2064
+
+    # shellcheck disable=SC2064 (ok to expand at definition time)
     trap "/bin/rm -f ${_tmpfile}" EXIT
+
     _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \> "${_tmpfile}"
     _run "${EDITOR:-/usr/bin/vi}" \'"${_tmpfile}"\'
     local _jail_conf

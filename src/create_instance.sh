@@ -1,3 +1,4 @@
+#!/bin/sh
 
 create_instance() { # <base|release> [options]
     local _usage="$0 create_instance <base|release>

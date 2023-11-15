@@ -1,3 +1,5 @@
+#!/bin/sh
+
 ### ZFS Layout
 #
 # ${ZPOOL}/${ZJAIL} mountpoint=${ZJAIL}

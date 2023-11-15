@@ -1,3 +1,4 @@
+#!/bin/sh
 
 build() { # <build-file>
     local _usage="$0 build <build-file>"
