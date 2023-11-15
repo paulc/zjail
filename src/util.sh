@@ -67,7 +67,7 @@ gen_lo() {
 # Generate random IPv6 Unique Local Address prefix
 gen_ula() {
     # 48-bit ULA address - fdXX:XXXX:XXXX (add /16 subnet id and /64 device address)
-    # shellcheck disable=SC2046
+    # shellcheck disable=SC2046,SC2183
     printf "fd%s:%s%s:%s%s\n" $(od -v -An -N5 -t x1 /dev/urandom)
 }
 
