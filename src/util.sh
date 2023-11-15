@@ -37,13 +37,13 @@ gen_id() {
         # Get 2 x 32 bit unsigned ints from /dev/urandom
         # (od doesnt accept -t u8 so we multiply in bc)
 
-        # shellcheck disable=SC2046 (need to split output)
+        # shellcheck disable=SC2046
         set -- $(od -v -An -N8 -t u4 /dev/urandom)
 
         # Reserve ::0 to ::ffff for system
         while [ "${1:-0}" -eq 0 ] && [ "${2:-0}" -lt 65536 ]
         do
-            # shellcheck disable=SC2046 (need to split output)
+            # shellcheck disable=SC2046
             set -- $(od -v -An -N8 -t u4 /dev/urandom)
         done
 
@@ -60,14 +60,14 @@ gen_id() {
 # though in practice this isnt a major problem as we only use to separate
 # loopback devices)
 gen_lo() {
-    # shellcheck disable=SC2046 (need to split output)
+    # shellcheck disable=SC2046
     /usr/bin/printf '127.%d.%d.%d\n' $(/usr/bin/od -v -An -N3 -t u1 /dev/urandom)
 }
 
 # Generate random IPv6 Unique Local Address prefix
 gen_ula() {
     # 48-bit ULA address - fdXX:XXXX:XXXX (add /16 subnet id and /64 device address)
-    # shellcheck disable=SC2046 (need to split output)
+    # shellcheck disable=SC2046
     printf "fd%s:%s%s:%s%s\n" $(od -v -An -N5 -t x1 /dev/urandom)
 }
 
