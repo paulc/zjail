@@ -1,6 +1,14 @@
 #!/bin/sh
 
+### 
+### The create_instance and build methods use (almost) the same code so we 
+### use the START_/END_ markers to automatically generate build.sh
+###
+
+### START_CREATE
+
 create_instance() { # <base|release> [options]
+
     local _usage="$0 create_instance <base|release>
     [-a]                                # Set sutostart flag
     [-c <site_config>]                  # Set jail.conf template
@@ -30,6 +38,45 @@ create_instance() { # <base|release> [options]
     then
         _fatal "Usage: ${_usage}"
     fi
+
+### END_CREATE
+
+### START_BUILD
+#
+#build() { # <build-file>
+#    local _usage="$0 build <build-file>"
+#    local _build_file="${1:-}"
+#
+#    if [ -z "${_build_file}" ]
+#    then
+#        _fatal "Usage: ${_usage}"
+#    fi
+#
+#    if [ "${_build_file}" = "-" ]
+#    then
+#        # Use STDIN
+#        _build_file="/dev/stdin"
+#    elif [ ! -r "${_build_file}" ]
+#    then
+#        _fatal "ERROR: Build file not readable [${_build_file}]"
+#    fi
+#
+#    # Strip comments and blank lines
+#    sed -e '/^#/d' -e '/^[[:space:]]*$/d' "${_build_file}" | (
+#
+#    # Expect BASE as first line
+#    read _option _base
+#    if [ "${_option}" != "BASE" ]
+#    then
+#        _fatal "Expected BASE on first line"
+#    fi
+#
+#    if [ -z "${_base}" ]
+#    then
+#        _fatal "Usage: ${_usage}"
+#    fi
+#
+### END_BUILD
 
     # Check base/release image exists and get latest snapshot
     local _latest=""
@@ -93,7 +140,12 @@ create_instance() { # <base|release> [options]
     local _wheel=""
     local _start=1
 
+### START_CREATE
     while getopts "ac:C:f:F:h:j:np:r:s:S:u:Uw" _opt; do
+### END_CREATE
+### START_BUILD
+#    while read _opt OPTARG; do  
+### END_BUILD
         case "${_opt}" in
             a|AUTOSTART)
                 # Autostart
@@ -308,4 +360,8 @@ ${_instance_id} {
 
     trap - EXIT
     printf '%s\n' "$_instance_id"
+
+### START_BUILD
+#    )
+### END_BUILD
 }

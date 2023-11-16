@@ -40,6 +40,10 @@ bin/zjail: $(SRC)
 	# Cleanup tmp files
 	rm -f $(USAGE) $(CMDS)
 
+src/build.sh: src/create_instance.sh
+	# Generate build.sh from create_instance.sh
+	sed -e '/START_CREATE/,/END_CREATE/s/^/#/' -e '/START_BUILD/,/END_BUILD/s/^#//' src/create_instance.sh > src/build.sh
+
 .PHONY: clean
 clean:
 	rm -f bin/zjail $(USAGE) $(CMDS)

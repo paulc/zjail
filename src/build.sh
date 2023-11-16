@@ -1,5 +1,48 @@
 #!/bin/sh
 
+### 
+### The create_instance and build methods use (almost) the same code so we 
+### use the START_/END_ markers to automatically generate build.sh
+###
+
+#### START_CREATE
+#
+#create_instance() { # <base|release> [options]
+#
+#    local _usage="$0 create_instance <base|release>
+#    [-a]                                # Set sutostart flag
+#    [-c <site_config>]                  # Set jail.conf template
+#    [-C <host_path>:<instance_path>]..  # Copy files from host to instance
+#    [-f <cmd>]..                        # Install firstboot cmd
+#    [-F <file>]..                       # Install firstboot file
+#    [-h <hostname>]                     # Set hostname
+#    [-j <jail_param>]..                 # Set jail parameters
+#    [-n]                                # Create but dont start instance
+#    [-p <pkg>]..                        # Install pkg
+#    [-r <cmd>]..                        # Run cmd (alias for -j 'exec.start = <cmd>')
+#    [-s <sysrc>]..                      # Set rc.local parameter (through sysrc)
+#    [-S <host_path>:<instance_path>]..  # Copy files filtering through envsubst(1)
+#    [-u '<user>:<pk>']..                # Add user/pk (note: pk needs to be quoted)
+#    [-U]                                # Update instance on firstboot
+#    [-w]                                # Add subsequent users to 'wheel' group
+#"
+#    case "${1:-}" in
+#        -h|-help|--help|help) _fatal "Usage: ${_usage}"
+#        ;;
+#    esac
+#
+#    local _base="${1:-}"
+#    shift
+#
+#    if [ -z "${_base}" ]
+#    then
+#        _fatal "Usage: ${_usage}"
+#    fi
+#
+#### END_CREATE
+
+## START_BUILD
+
 build() { # <build-file>
     local _usage="$0 build <build-file>"
     local _build_file="${1:-}"
@@ -33,8 +76,7 @@ build() { # <build-file>
         _fatal "Usage: ${_usage}"
     fi
 
-
-
+## END_BUILD
 
     # Check base/release image exists and get latest snapshot
     local _latest=""
@@ -58,7 +100,8 @@ build() { # <build-file>
     _silent /bin/test -d \'"${ZJAIL_RUN}"\' || _fatal "ZJAIL_RUN [${ZJAIL_RUN}] not found"
 
     # Generate random 64-bit jail_id and IPv6 suffix
-    local _instance_id="$(_run gen_id)"
+    local _instance_id
+    _instance_id="$(_run gen_id)"
 
     # Check for ID collisions
     while _silent /bin/test -d \'"${ZJAIL_RUN}/${_instance_id}"\'
@@ -71,14 +114,18 @@ build() { # <build-file>
         _err "Invalid _instance_id: ${_instance_id}"
     fi
 
-    local _ipv4_lo="$(_run gen_lo)"
-    local _ipv6_suffix="$(_run get_ipv6_suffix \'"$_instance_id"\')"
-    local _counter="$(_run increment_counter \'"$ZJAIL_CONFIG/.counter"\')"
+    local _ipv4_lo
+    _ipv4_lo="$(_run gen_lo)"
+    local _ipv6_suffix
+    _ipv6_suffix="$(_run get_ipv6_suffix \'"$_instance_id"\')"
+    local _counter
+    _counter="$(_run increment_counter \'"$ZJAIL_CONFIG/.counter"\')"
 
     # Clone base
     _check /sbin/zfs clone \'"${_latest}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
 
     # Clean up if we exit with error
+    # shellcheck disable=SC2064
     trap "_run /sbin/zfs destroy -r \'${ZJAIL_RUN_DATASET}/${_instance_id}\'" EXIT
 
     # Delay options processing until after we have created the image dataset so
@@ -93,10 +140,12 @@ build() { # <build-file>
     local _wheel=""
     local _start=1
 
-    local _opt=""
-    # We reuse option processing from create_instance so use OPTARG 
-    while read _opt OPTARG
-    do
+#### START_CREATE
+#    while getopts "ac:C:f:F:h:j:np:r:s:S:u:Uw" _opt; do
+#### END_CREATE
+## START_BUILD
+    while read _opt OPTARG; do  
+## END_BUILD
         case "${_opt}" in
             a|AUTOSTART)
                 # Autostart
@@ -119,10 +168,11 @@ build() { # <build-file>
                     # Install firstboot_run
                     install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
                 fi
-                local _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
+                local _firstboot_file
+                _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
                 _log_message "firstboot_file: ${_firstboot_file}"
                 echo "${OPTARG}" | _check /usr/bin/tee \'"${_firstboot_file}"\' >&2
-                _firstboot_id=$(($_firstboot_id + 1))
+                _firstboot_id=$((_firstboot_id + 1))
                 ;;
             F|FIRSTBOOT_FILE)
                 # Iinstall file as firstboot script
@@ -132,7 +182,8 @@ build() { # <build-file>
                     _log_message "Installing firstboot_run"
                     install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
                 fi
-                local _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
+                local _firstboot_file
+                _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
                 _log_message "firstboot_file: ${_firstboot_file}"
                 if [ "${OPTARG}" = "-" ]
                 then
@@ -144,9 +195,9 @@ build() { # <build-file>
                     then
                         _fatal "Run file [${OPTARG}] not found"
                     fi
-                    cat "${OPTARG}" | _check /usr/bin/tee \'"${_firstboot_file}"\' >&2
+                    _check /usr/bin/tee \'"${_firstboot_file}"\' >&2 <"${OPTARG}" 
                 fi
-                _firstboot_id=$(($_firstboot_id + 1))
+                _firstboot_id=$((_firstboot_id + 1))
                 ;;
             h|HOSTNAME)
                 # Set hostname
@@ -174,8 +225,7 @@ build() { # <build-file>
                 fi
 
                 # Bootstrap pkg if needed
-                _log /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg -N
-                if [ $? -ne 0 ]
+                if _log /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg -N
                 then
                     _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg bootstrap >&2
                 fi
@@ -221,15 +271,16 @@ build() { # <build-file>
                 if ! _silent /usr/sbin/pw -R \'"${ZJAIL_RUN}/${_instance_id}"\' usershow -n \'"${_name}"\'
                 then
                     # Create user
+                    # shellcheck disable=SC2086
                     _check /usr/sbin/pw -R \'"${ZJAIL_RUN}/${_instance_id}"\' useradd -n \'"${_name}"\' -m -s /bin/sh -h - ${_wheel}
                 fi
                 _uid=$(_run /usr/sbin/pw -R \'"${ZJAIL_RUN}/${_instance_id}"\' usershow -n \'"${_name}"\' \| awk -F: "'{ print \$3 }'")
                 _home=$(_run /usr/sbin/pw -R \'"${ZJAIL_RUN}/${_instance_id}"\' usershow -n \'"${_name}"\' \| awk -F: "'{ print \$9 }'")
-                _check /bin/mkdir -p -m 700 \'${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh\'
-                _check /usr/bin/printf "'%s\n'" \'"${_pk}"\' \>\> \'${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys\'
+                _check /bin/mkdir -p -m 700 \'"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh"\'
+                _check /usr/bin/printf "'%s\n'" \'"${_pk}"\' \>\> \'"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys"\'
                 # We assume uid == gid
-                _check /usr/sbin/chown -R \'"${_uid}:${_uid}"\' \'${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh\'
-                _check /bin/chmod 600 \'${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys\'
+                _check /usr/sbin/chown -R \'"${_uid}:${_uid}"\' \'"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh"\'
+                _check /bin/chmod 600 \'"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys"\'
                 ;;
             U|UPDATE)  # Update instance (before boot)
                 # Copy local resolv.conf
@@ -246,7 +297,7 @@ build() { # <build-file>
                 _wheel="-G wheel"
                 ;;
             *)
-                _fatal "INVALID OPTION: ${_opt} ${OPTARG}"
+                _fatal "Usage: ${_usage}"
                 ;;
         esac
     done
@@ -259,11 +310,18 @@ build() { # <build-file>
     _check /sbin/zfs set zjail:autostart=\'"${_autostart}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
     _check /sbin/zfs set zjail:counter=\'"${_counter}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
 
-    local _counter24=$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(bshr(c,16),255),".",band(bshr(c,8),255),".",band(c,255)')
-    local _counter16=$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(bshr(c,8),255),".",band(c,255)')
-    local _counter8=$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(c,255)')
+    local _counter24
+    local _counter16
+    local _counter8
+    _counter24="$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(bshr(c,16),255),".",band(bshr(c,8),255),".",band(c,255)')"
+    _counter16="$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(bshr(c,8),255),".",band(c,255)')"
+    _counter8="$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(c,255)')"
 
-    local _jail_conf="\
+    local _jail_conf
+
+    # shellcheck disable=1078,1079,2027,2086
+    { 
+    _jail_conf="
 ${_site}
 
 ${_instance_id} {
@@ -281,6 +339,8 @@ ${_instance_id} {
     ${_jail_params}
 }
 "
+    }
+
     # Dont use _check to avoid double quoting problems
     _log_cmdline /sbin/zfs set zjail:conf=\'"${_jail_conf}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
     /sbin/zfs set zjail:conf="${_jail_conf}" "${ZJAIL_RUN_DATASET}/${_instance_id}" || _fatal "Cant set zjail:conf property"
@@ -295,12 +355,13 @@ ${_instance_id} {
             _jail_verbose="-v"
         fi
 
-        _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| /usr/sbin/jail ${_jail_verbose} -f - -c ${_instance_id} >&2
+        _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| /usr/sbin/jail ${_jail_verbose} -f - -c "${_instance_id}" >&2
     fi
 
     trap - EXIT
-    printf '%s\n' $_instance_id
+    printf '%s\n' "$_instance_id"
 
+## START_BUILD
     )
+## END_BUILD
 }
-
