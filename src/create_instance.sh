@@ -120,7 +120,7 @@ create_instance() { # <base|release> [options]
                 _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
                 _log_message "firstboot_file: ${_firstboot_file}"
                 echo "${OPTARG}" | _check /usr/bin/tee \'"${_firstboot_file}"\' >&2
-                _firstboot_id=$(($_firstboot_id + 1))
+                _firstboot_id=$((_firstboot_id + 1))
                 ;;
             F|FIRSTBOOT_FILE)
                 # Iinstall file as firstboot script
@@ -265,7 +265,11 @@ create_instance() { # <base|release> [options]
     _counter16="$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(bshr(c,8),255),".",band(c,255)')"
     _counter8="$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(c,255)')"
 
-    local _jail_conf="
+    local _jail_conf
+
+    # shellcheck disable=1078,1079,2086
+    { 
+    _jail_conf="
 ${_site}
 
 ${_instance_id} {
@@ -283,6 +287,8 @@ ${_instance_id} {
     ${_jail_params}
 }
 "
+    }
+
     # Dont use _check to avoid double quoting problems
     _log_cmdline /sbin/zfs set zjail:conf=\'"${_jail_conf}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
     /sbin/zfs set zjail:conf="${_jail_conf}" "${ZJAIL_RUN_DATASET}/${_instance_id}" || _fatal "Cant set zjail:conf property"
@@ -297,9 +303,9 @@ ${_instance_id} {
             _jail_verbose="-v"
         fi
 
-        _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| /usr/sbin/jail ${_jail_verbose} -f - -c ${_instance_id} >&2
+        _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \| /usr/sbin/jail ${_jail_verbose} -f - -c "${_instance_id}" >&2
     fi
 
     trap - EXIT
-    printf '%s\n' $_instance_id
+    printf '%s\n' "$_instance_id"
 }
