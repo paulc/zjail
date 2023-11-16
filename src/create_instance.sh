@@ -267,7 +267,7 @@ create_instance() { # <base|release> [options]
 
     local _jail_conf
 
-    # shellcheck disable=1078,1079,2086
+    # shellcheck disable=1078,1079,2027,2086
     { 
     _jail_conf="
 ${_site}

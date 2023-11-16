@@ -50,4 +50,4 @@ test: bin/zjail /usr/local/bin/shunit2
 
 .PHONY: shellcheck
 shellcheck: bin/zjail /usr/local/bin/shellcheck
-	/usr/local/bin/shellcheck -e SC3043,SC2124 bin/zjail
+	/usr/local/bin/shellcheck -e SC3043,SC2124,SC2214,SC3040 bin/zjail

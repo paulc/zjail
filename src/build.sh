@@ -33,6 +33,9 @@ build() { # <build-file>
         _fatal "Usage: ${_usage}"
     fi
 
+
+
+
     # Check base/release image exists and get latest snapshot
     local _latest=""
     if _silent /bin/test -d \'"${ZJAIL_BASE}/${_base}"\'
