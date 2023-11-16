@@ -53,7 +53,8 @@ create_instance() { # <base|release> [options]
     _silent /bin/test -d \'"${ZJAIL_RUN}"\' || _fatal "ZJAIL_RUN [${ZJAIL_RUN}] not found"
 
     # Generate random 64-bit jail_id and IPv6 suffix
-    local _instance_id="$(_run gen_id)"
+    local _instance_id
+    _instance_id="$(_run gen_id)"
 
     # Check for ID collisions
     while _silent /bin/test -d \'"${ZJAIL_RUN}/${_instance_id}"\'
@@ -66,14 +67,18 @@ create_instance() { # <base|release> [options]
         _err "Invalid _instance_id: ${_instance_id}"
     fi
 
-    local _ipv4_lo="$(_run gen_lo)"
-    local _ipv6_suffix="$(_run get_ipv6_suffix \'"$_instance_id"\')"
-    local _counter="$(_run increment_counter \'"$ZJAIL_CONFIG/.counter"\')"
+    local _ipv4_lo
+    _ipv4_lo="$(_run gen_lo)"
+    local _ipv6_suffix
+    _ipv6_suffix="$(_run get_ipv6_suffix \'"$_instance_id"\')"
+    local _counter
+    _counter="$(_run increment_counter \'"$ZJAIL_CONFIG/.counter"\')"
 
     # Clone base
     _check /sbin/zfs clone \'"${_latest}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
 
     # Clean up if we exit with error
+    # shellcheck disable=SC2064
     trap "_run /sbin/zfs destroy -r \'${ZJAIL_RUN_DATASET}/${_instance_id}\'" EXIT
 
     # Delay options processing until after we have created the image dataset so
@@ -111,7 +116,8 @@ create_instance() { # <base|release> [options]
                     # Install firstboot_run
                     install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
                 fi
-                local _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
+                local _firstboot_file
+                _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
                 _log_message "firstboot_file: ${_firstboot_file}"
                 echo "${OPTARG}" | _check /usr/bin/tee \'"${_firstboot_file}"\' >&2
                 _firstboot_id=$(($_firstboot_id + 1))
@@ -124,7 +130,8 @@ create_instance() { # <base|release> [options]
                     _log_message "Installing firstboot_run"
                     install_firstboot_run "${ZJAIL_RUN}/${_instance_id}"
                 fi
-                local _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
+                local _firstboot_file
+                _firstboot_file="$(printf '%s/%s/var/firstboot_run.d/%04d-run' "${ZJAIL_RUN}" "${_instance_id}" "${_firstboot_id}")"
                 _log_message "firstboot_file: ${_firstboot_file}"
                 if [ "${OPTARG}" = "-" ]
                 then
@@ -136,9 +143,9 @@ create_instance() { # <base|release> [options]
                     then
                         _fatal "Run file [${OPTARG}] not found"
                     fi
-                    cat "${OPTARG}" | _check /usr/bin/tee \'"${_firstboot_file}"\' >&2
+                    _check /usr/bin/tee \'"${_firstboot_file}"\' >&2 <"${OPTARG}" 
                 fi
-                _firstboot_id=$(($_firstboot_id + 1))
+                _firstboot_id=$((_firstboot_id + 1))
                 ;;
             h|HOSTNAME)
                 # Set hostname
@@ -166,8 +173,7 @@ create_instance() { # <base|release> [options]
                 fi
 
                 # Bootstrap pkg if needed
-                _log /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg -N
-                if [ $? -ne 0 ]
+                if _log /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg -N
                 then
                     _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg bootstrap >&2
                 fi
@@ -213,15 +219,16 @@ create_instance() { # <base|release> [options]
                 if ! _silent /usr/sbin/pw -R \'"${ZJAIL_RUN}/${_instance_id}"\' usershow -n \'"${_name}"\'
                 then
                     # Create user
+                    # shellcheck disable=SC2086
                     _check /usr/sbin/pw -R \'"${ZJAIL_RUN}/${_instance_id}"\' useradd -n \'"${_name}"\' -m -s /bin/sh -h - ${_wheel}
                 fi
                 _uid=$(_run /usr/sbin/pw -R \'"${ZJAIL_RUN}/${_instance_id}"\' usershow -n \'"${_name}"\' \| awk -F: "'{ print \$3 }'")
                 _home=$(_run /usr/sbin/pw -R \'"${ZJAIL_RUN}/${_instance_id}"\' usershow -n \'"${_name}"\' \| awk -F: "'{ print \$9 }'")
-                _check /bin/mkdir -p -m 700 \'${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh\'
-                _check /usr/bin/printf "'%s\n'" \'"${_pk}"\' \>\> \'${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys\'
+                _check /bin/mkdir -p -m 700 \'"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh"\'
+                _check /usr/bin/printf "'%s\n'" \'"${_pk}"\' \>\> \'"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys"\'
                 # We assume uid == gid
-                _check /usr/sbin/chown -R \'"${_uid}:${_uid}"\' \'${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh\'
-                _check /bin/chmod 600 \'${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys\'
+                _check /usr/sbin/chown -R \'"${_uid}:${_uid}"\' \'"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh"\'
+                _check /bin/chmod 600 \'"${ZJAIL_RUN}/${_instance_id}/${_home}/.ssh/authorized_keys"\'
                 ;;
             U|UPDATE)  # Update instance (before boot)
                 # Copy local resolv.conf
@@ -251,11 +258,14 @@ create_instance() { # <base|release> [options]
     _check /sbin/zfs set zjail:autostart=\'"${_autostart}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
     _check /sbin/zfs set zjail:counter=\'"${_counter}"\' \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
 
-    local _counter24=$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(bshr(c,16),255),".",band(bshr(c,8),255),".",band(c,255)')
-    local _counter16=$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(bshr(c,8),255),".",band(c,255)')
-    local _counter8=$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(c,255)')
+    local _counter24
+    local _counter16
+    local _counter8
+    _counter24="$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(bshr(c,16),255),".",band(bshr(c,8),255),".",band(c,255)')"
+    _counter16="$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(bshr(c,8),255),".",band(c,255)')"
+    _counter8="$(/usr/bin/bc -l -e "c=${_counter}" -e 'print band(c,255)')"
 
-    local _jail_conf="\
+    local _jail_conf="
 ${_site}
 
 ${_instance_id} {

@@ -47,3 +47,7 @@ clean:
 .PHONY: test
 test: bin/zjail /usr/local/bin/shunit2
 	./test/shunit.sh 2>/dev/null
+
+.PHONY: shellcheck
+shellcheck: bin/zjail /usr/local/bin/shellcheck
+	/usr/local/bin/shellcheck -e SC3043,SC2124 bin/zjail
