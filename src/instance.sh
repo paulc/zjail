@@ -79,7 +79,7 @@ edit_jail_conf() { # <instance_id>
     local _tmpfile
     _tmpfile=$(_run /usr/bin/mktemp) || _fatal "Cant create TMPFILE"
 
-    # shellcheck disable=SC2064 (ok to expand at definition time)
+    # shellcheck disable=SC2064
     trap "/bin/rm -f ${_tmpfile}" EXIT
 
     _check /sbin/zfs get -H -o value zjail:conf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\' \> "${_tmpfile}"

@@ -13,7 +13,7 @@
 ### Config
 
 ARCH="$(/usr/bin/uname -m)"
-ABI="$(/usr/bin/printf '%s:%d:%s' $(/usr/bin/uname -s) $(($(/usr/bin/uname -U) / 100000)) $(/sbin/sysctl -n hw.machine_arch))"
+# ABI="$(/usr/bin/printf '%s:%d:%s' $(/usr/bin/uname -s) $(($(/usr/bin/uname -U) / 100000)) $(/sbin/sysctl -n hw.machine_arch))"
 OS_RELEASE="$(/sbin/sysctl -n kern.osrelease)"
 OS_RELEASE="${OS_RELEASE%-p[0-9]*}"     # Strip patch
 ZPOOL="${ZPOOL:-zroot}"
