@@ -65,7 +65,7 @@ build() { # <build-file>
     sed -e '/^#/d' -e '/^[[:space:]]*$/d' "${_build_file}" | (
 
     # Expect BASE as first line
-    read _option _base
+    read -r _option _base
     if [ "${_option}" != "BASE" ]
     then
         _fatal "Expected BASE on first line"
@@ -144,6 +144,7 @@ build() { # <build-file>
 #    while getopts "ac:C:f:F:h:j:np:r:s:S:u:Uw" _opt; do
 #### END_CREATE
 ## START_BUILD
+    # shellcheck disable=SC2162
     while read _opt OPTARG; do  
 ## END_BUILD
         case "${_opt}" in
