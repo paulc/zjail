@@ -126,7 +126,7 @@ create_instance() { # <base|release> [options]
 
     # Clean up if we exit with error
     # shellcheck disable=SC2064
-    trap "_run /sbin/zfs destroy -r \'${ZJAIL_RUN_DATASET}/${_instance_id}\'" EXIT
+    trap "_run /sbin/zfs destroy -Rf \'${ZJAIL_RUN_DATASET}/${_instance_id}\'" EXIT
 
     # Delay options processing until after we have created the image dataset so
     # that we can operate on this directly
@@ -231,7 +231,7 @@ create_instance() { # <base|release> [options]
                     _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg bootstrap >&2
                 fi
 
-                _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg install \'"${OPTARG}"\' >&2
+                _check ASSUME_ALWAYS_YES=YES /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /usr/sbin/pkg install "${OPTARG}" >&2
 
                 _check /sbin/umount \'"${ZJAIL_RUN}/${_instance_id}/dev"\'
                 ;;

@@ -10,6 +10,7 @@ SRC := Makefile \
 	   src/create_instance.sh \
 	   src/build.sh
 
+# Note - tmp files will always be generated so need to cleanup
 USAGE != mktemp
 CMDS != mktemp
 
@@ -37,12 +38,15 @@ bin/zjail: $(SRC)
 		src/zjail.sh > bin/zjail
 	# Mark as executable
 	chmod 755 bin/zjail
-	# Cleanup tmp files
-	rm -f $(USAGE) $(CMDS)
 
 src/build.sh: src/create_instance.sh
 	# Generate build.sh from create_instance.sh
 	sed -e '/START_CREATE/,/END_CREATE/s/^/#/' -e '/START_BUILD/,/END_BUILD/s/^#//' src/create_instance.sh > src/build.sh
+
+.END: cleanup
+cleanup:
+	# Cleanup tmp files
+	rm -f $(USAGE) $(CMDS)
 
 .PHONY: clean
 clean:

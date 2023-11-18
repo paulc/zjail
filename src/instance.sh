@@ -168,7 +168,7 @@ destroy_instance() { # <instance_id>
     do
         sleep 0.5
     done
-    _check /sbin/zfs destroy -r \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
+    _check /sbin/zfs destroy -Rf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
 }
 
 set_hostname() { # <instance_id> <hostname>
