@@ -163,10 +163,16 @@ destroy_instance() { # <instance_id>
     # Cleanup any mounts
     cleanup_mounts "${_instance_id}"
 
-    # Wait for jail to stop
+    # Wait upto 30s for jail to stop
+    local _counter=0
     while _run jls -dj "${_instance_id}" \>/dev/null 2\>\&1
     do
         sleep 0.5
+        _counter=$((_counter + 1))
+        if [ "${_counter}" -gt 60 ]
+        then
+            _fatal "Jail still running [${_instance_id}]"
+        fi
     done
     _check /sbin/zfs destroy -Rf \'"${ZJAIL_RUN_DATASET}/${_instance_id}"\'
 }
