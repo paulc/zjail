@@ -162,7 +162,7 @@ testLoopback() {
         ip6.addr += "$lo|::$suffix/128";
 EOM
     LO=$(_run ifconfig lo create)
-    ID=$(./bin/zjail create_instance b1 -j allow.raw_sockets -j "\$lo=$LO" -c "${ZJAIL}/config/lo.conf")
+    ID=$(./bin/zjail create_instance b1 -j allow.raw_sockets -j "\$lo=$LO" -J "${ZJAIL}/config/lo.conf")
     SUFFIX=$(zfs get -H -o value zjail:suffix "${ZJAIL}/run/${ARCH}/${ID}")
     _silent ping -q -c1 -t1 "::${SUFFIX}" || fail PING6
     _silent jexec $ID ping -q -c1 -t1 ::1 || fail PING6
@@ -220,14 +220,14 @@ testCreateInstanceAutostart() {
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
 }
 
-testCreateInstanceSiteConfig() {
+testCreateInstanceJailConfig() {
     cat > "${ZJAIL}/config/test.conf" <<'EOM'
         exec.start = "/usr/bin/touch /TEST";
         mount.devfs;
         devfs_ruleset = 4;
         persist;
 EOM
-    ID=$(./bin/zjail create_instance b1 -c "${ZJAIL}/config/test.conf")
+    ID=$(./bin/zjail create_instance b1 -J "${ZJAIL}/config/test.conf")
     _silent jexec $ID ls /TEST || fail JEXEC
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
     rm "${ZJAIL}/config/test.conf"
@@ -249,7 +249,7 @@ testCreateInstanceFirstbootCommand() {
         devfs_ruleset = 4;
         persist;
 EOM
-    ID=$(./bin/zjail create_instance b1 -c "${ZJAIL}/config/test.conf" -f "touch /FIRSTBOOT1" -f "touch /FIRSTBOOT2")
+    ID=$(./bin/zjail create_instance b1 -J "${ZJAIL}/config/test.conf" -f "touch /FIRSTBOOT1" -f "touch /FIRSTBOOT2")
     _silent jexec $ID ls /FIRSTBOOT1 || fail JEXEC
     _silent jexec $ID ls /FIRSTBOOT2 || fail JEXEC
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
@@ -269,7 +269,7 @@ EOM
     cat > "${ZJAIL}/config/firstboot2" <<'EOM'
         touch /FIRSTBOOT2
 EOM
-    ID=$(./bin/zjail create_instance b1 -c "${ZJAIL}/config/test.conf" -F "${ZJAIL}/config/firstboot1" -F "${ZJAIL}/config/firstboot2" -f "touch /FIRSTBOOT3")
+    ID=$(./bin/zjail create_instance b1 -J "${ZJAIL}/config/test.conf" -F "${ZJAIL}/config/firstboot1" -F "${ZJAIL}/config/firstboot2" -f "touch /FIRSTBOOT3")
     _silent jexec $ID ls /FIRSTBOOT1 || fail JEXEC
     _silent jexec $ID ls /FIRSTBOOT2 || fail JEXEC
     _silent jexec $ID ls /FIRSTBOOT3 || fail JEXEC
@@ -284,7 +284,7 @@ testCreateInstanceHostname() {
         devfs_ruleset = 4;
         persist;
 EOM
-    ID=$(./bin/zjail create_instance b1 -c "${ZJAIL}/config/test.conf" -h HOSTNAME)
+    ID=$(./bin/zjail create_instance b1 -J "${ZJAIL}/config/test.conf" -h HOSTNAME)
     assertEquals "$(jexec $ID hostname)" HOSTNAME
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
     rm "${ZJAIL}/config/test.conf"
@@ -297,7 +297,7 @@ testCreateInstanceJailParam() {
         devfs_ruleset = 4;
         persist;
 EOM
-    ID=$(./bin/zjail create_instance b1 -j "exec.start = 'touch /START'" -c "${ZJAIL}/config/test.conf")
+    ID=$(./bin/zjail create_instance b1 -j "exec.start = 'touch /START'" -J "${ZJAIL}/config/test.conf")
     _silent jexec $ID ls /START || fail JEXEC
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
     rm "${ZJAIL}/config/test.conf"
@@ -310,7 +310,7 @@ testCreateInstanceNoStart() {
         devfs_ruleset = 4;
         persist;
 EOM
-    ID=$(./bin/zjail create_instance b1 -n -c "${ZJAIL}/config/test.conf")
+    ID=$(./bin/zjail create_instance b1 -n -J "${ZJAIL}/config/test.conf")
     _silent jls -j $ID name && fail JLS
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
     rm "${ZJAIL}/config/test.conf"
@@ -323,7 +323,7 @@ testCreateInstancePackage() {
         devfs_ruleset = 4;
         persist;
 EOM
-    ID=$(./bin/zjail create_instance b1 -p bash -c "${ZJAIL}/config/test.conf")
+    ID=$(./bin/zjail create_instance b1 -p bash -J "${ZJAIL}/config/test.conf")
     _silent jexec $ID /usr/local/bin/bash -c /usr/bin/uname || fail JEXEC
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
     rm "${ZJAIL}/config/test.conf"
@@ -336,7 +336,7 @@ testCreateInstanceRun() {
         devfs_ruleset = 4;
         persist;
 EOM
-    ID=$(./bin/zjail create_instance b1 -r "touch /RUN1" -r "touch /RUN2" -c "${ZJAIL}/config/test.conf")
+    ID=$(./bin/zjail create_instance b1 -r "touch /RUN1" -r "touch /RUN2" -J "${ZJAIL}/config/test.conf")
     _silent jexec $ID ls /RUN1 || fail JEXEC
     _silent jexec $ID ls /RUN2 || fail JEXEC
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
@@ -351,7 +351,7 @@ testCreateInstanceSysrc() {
         persist;
 EOM
     LO=$(_run ifconfig lo create)
-    ID=$(./bin/zjail create_instance b1 -s sshd_enable=YES -j "ip6.addr = $LO|::\$suffix" -c "${ZJAIL}/config/test.conf")
+    ID=$(./bin/zjail create_instance b1 -s sshd_enable=YES -j "ip6.addr = $LO|::\$suffix" -J "${ZJAIL}/config/test.conf")
     nc -z "::$(./bin/zjail get_ipv6_suffix $ID)" 22 || fail SSH
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
     rm "${ZJAIL}/config/test.conf"

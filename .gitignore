@@ -1,2 +1,3 @@
 *.swp
 bin/zjail
+src/build.sh

@@ -11,12 +11,12 @@ create_instance() { # <base|release> [options]
 
     local _usage="$0 create_instance <base|release>
     [-a]                                # Set sutostart flag
-    [-c <site_config>]                  # Set jail.conf template
     [-C <host_path>:<instance_path>]..  # Copy files from host to instance
     [-f <cmd>]..                        # Install firstboot cmd
     [-F <file>]..                       # Install firstboot file
     [-h <hostname>]                     # Set hostname
     [-j <jail_param>]..                 # Set jail parameters
+    [-J <jail_conf>]                    # Set jail.conf template
     [-n]                                # Create but dont start instance
     [-p <pkg>]..                        # Install pkg
     [-r <cmd>]..                        # Run cmd (alias for -j 'exec.start = <cmd>')
@@ -141,7 +141,7 @@ create_instance() { # <base|release> [options]
     local _start=1
 
 ### START_CREATE
-    while getopts "ac:C:f:F:h:j:np:r:s:S:u:Uw" _opt; do
+    while getopts "aC:f:F:h:j:J:np:r:s:S:u:Uw" _opt; do
 ### END_CREATE
 ### START_BUILD
 #    # shellcheck disable=SC2162
@@ -151,10 +151,6 @@ create_instance() { # <base|release> [options]
             a|AUTOSTART)
                 # Autostart
                 _autostart="on"
-                ;;
-            c|CONFIG)
-                # Set site config
-                _site="$(_run cat \'"${OPTARG}"\')" || _fatal "Site config not found: ${OPTARG}"
                 ;;
             C|COPY)
                 # Copy file from host
@@ -207,6 +203,10 @@ create_instance() { # <base|release> [options]
             j|JAIL_PARAM)
                 # Add jail param
                 _jail_params="$(printf '%s\n    %s;' "${_jail_params}" "${OPTARG}")"
+                ;;
+            J|JAIL_CONF)
+                # Set jail.conf template
+                _site="$(_run cat \'"${OPTARG}"\')" || _fatal "jail.conf template not found: ${OPTARG}"
                 ;;
             n|NOSTART)  
                 # Dont start instance

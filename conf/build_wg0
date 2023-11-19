@@ -1,0 +1,23 @@
+# Base
+BASE 13.2-RELEASE
+UPDATE
+
+# Configure instance
+COPY /etc/resolv.conf:/etc/resolv.conf
+SYSRC sshd_enable=YES
+RUN /bin/sh /etc/rc
+
+# Packages
+PKG bash curl
+
+# Add users
+WHEEL
+USER paulc:ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAgJztpH3nPj3a5E5ua0lpm2Ht+y+rJdPskx/TrAUAfn
+
+# Jail config
+JAIL_PARAM mount.devfs
+JAIL_PARAM devfs_ruleset = 4
+JAIL_PARAM persist
+JAIL_PARAM ip4.addr = lo1|127.$counter24
+JAIL_PARAM ip6.addr = lo1|::$suffix
+JAIL_PARAM ip6.addr = wg0|2001:470:1d41:12ff:$suffix
