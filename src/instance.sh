@@ -25,8 +25,7 @@ list_instance_details() { # [instance_id]
                     fi
 
                     local _jid
-                    _jid=$(jls -j "${_id}" jid 2>/dev/null)
-                    if [ -n "${_jid}" ]
+                    if _jid=$(jls -j "${_id}" jid 2>/dev/null)
                     then
                         local _status="RUNNING [${_jid}]"
                     else
@@ -46,8 +45,7 @@ list_instance_details() { # [instance_id]
                 local _id _hostname _counter _suffix _loopback _base _autostart
                 read -r _id _hostname _counter _suffix _loopback _base _autostart
                 local _jid
-                _jid=$(jls -j "${_id}" jid 2>/dev/null)
-                if [ -n "${_jid}" ]
+                if _jid=$(jls -j "${_id}" jid 2>/dev/null)
                 then
                     local _status="RUNNING [${_jid}]"
                 else

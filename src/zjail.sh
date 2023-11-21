@@ -30,6 +30,7 @@ then
     . "${_src}/base.sh"
     . "${_src}/instance.sh"
     . "${_src}/create_instance.sh"
+    sed -e '/START_CREATE/,/END_CREATE/s/^/#/' -e '/START_BUILD/,/END_BUILD/s/^#//' "${_src}/create_instance.sh" > "${_src}/build.sh"
     . "${_src}/build.sh"
 
     # We havent extracted subcommand logic so just try to run cmd
