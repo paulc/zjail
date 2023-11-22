@@ -24,6 +24,8 @@ create_instance() { # <base|release> [options]
     [-S <host_path>:<instance_path>]..  # Copy files filtering through envsubst(1)
     [-u '<user>:<pk>']..                # Add user/pk (note: pk needs to be quoted)
     [-U]                                # Update instance on firstboot
+    [-v <volume>                        # Attach volume $ZJAIL/volumes/<volume>
+    [-V <volume:size>                   # Attach volume $ZJAIL/volumes/<volume> (create if necessary)
     [-w]                                # Add subsequent users to 'wheel' group
 "
     case "${1:-}" in
@@ -141,7 +143,7 @@ create_instance() { # <base|release> [options]
     local _start=1
 
 ### START_CREATE
-    while getopts "aC:f:F:h:j:J:np:r:s:S:u:Uw" _opt; do
+    while getopts "aC:f:F:h:j:J:np:r:s:S:u:Uv:V:w" _opt; do
 ### END_CREATE
 ### START_BUILD
 #    # shellcheck disable=SC2162
@@ -292,6 +294,32 @@ create_instance() { # <base|release> [options]
                 _check /bin/cp /etc/resolv.conf \'"${ZJAIL_RUN}/${_instance_id}/etc/resolv.conf"\'
 
                 /bin/echo "${_update_instance}" | _check /usr/sbin/chroot \'"${ZJAIL_RUN}/${_instance_id}"\' /bin/sh | _log_output
+                ;;
+            v|VOLUME) 
+                # Attach volume $ZJAIL/volumes/<volume>
+                local _volume="${OPTARG}"
+                if ! _silent /sbin/zfs list -o name \'"${ZJAIL_VOLUMES_DATASET}/${_volume}"\'
+                then
+                    _fatal "Dataset ${ZJAIL_VOLUMES_DATASET}/${_volume} not found"
+                fi
+                _jail_params="$(printf '%s\n    exec.prepare += "mkdir -p $root/volumes/%s";\n    mount += "%s/%s $root/volumes/%s zfs rw 0 0";' \
+                        "${_jail_params}" "${_volume}" "${ZJAIL_VOLUMES_DATASET}" "${_volume}" "${_volume}")"
+                ;;
+            V|VOLUME_CREATE) 
+                # Attach volume $ZJAIL/volumes/<volume> (create if needed)
+                # (To specify volume size use <volume:size> argument)
+                local _volume="${OPTARG%%:*}"
+                if ! _silent /sbin/zfs list -o name \'"${ZJAIL_VOLUMES_DATASET}/${_volume}"\'
+                then
+                    _check /sbin/zfs create -o canmount=noauto \'"${ZJAIL_VOLUMES_DATASET}/${_volume}"\'
+                    local _quota
+                    if _quota=$(expr "${OPTARG}" : '.*:\(.*\)')
+                    then
+                        _check /sbin/zfs set quota="${_quota}" \'"${ZJAIL_VOLUMES_DATASET}/${_volume}"\'
+                    fi
+                fi
+                _jail_params="$(printf '%s\n    exec.prepare += "mkdir -p $root/volumes/%s";\n    mount += "%s/%s $root/volumes/%s zfs rw 0 0";' \
+                        "${_jail_params}" "${_volume}" "${ZJAIL_VOLUMES_DATASET}" "${_volume}" "${_volume}")"
                 ;;
             w|WHEEL)
                 # Add subsequent users to the wheel group
