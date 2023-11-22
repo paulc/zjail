@@ -302,8 +302,15 @@ create_instance() { # <base|release> [options]
                 then
                     _fatal "Dataset ${ZJAIL_VOLUMES_DATASET}/${_volume} not found"
                 fi
-                _jail_params="$(printf '%s\n    exec.prepare += "mkdir -p $root/volumes/%s";\n    mount += "%s/%s $root/volumes/%s zfs rw 0 0";' \
-                        "${_jail_params}" "${_volume}" "${ZJAIL_VOLUMES_DATASET}" "${_volume}" "${_volume}")"
+                # We use exec.prepare/exec.release rather than 'mount' directive to handle paths with spaces
+                _jail_params="$(printf '%s
+    exec.prepare += "mkdir -p \\"$root/volumes/%s\\"";
+    exec.prepare += "mount -t zfs \\"%s/%s\\" \\"$root/volumes/%s\\"";
+    exec.release += "umount  \\"%s/%s\\"";' \
+                        "${_jail_params}" \
+                        "${_volume}" \
+                        "${ZJAIL_VOLUMES_DATASET}" "${_volume}" "${_volume}" \
+                        "${ZJAIL_VOLUMES_DATASET}" "${_volume}")"
                 ;;
             V|VOLUME_CREATE) 
                 # Attach volume $ZJAIL/volumes/<volume> (create if needed)
@@ -318,8 +325,15 @@ create_instance() { # <base|release> [options]
                         _check /sbin/zfs set quota="${_quota}" \'"${ZJAIL_VOLUMES_DATASET}/${_volume}"\'
                     fi
                 fi
-                _jail_params="$(printf '%s\n    exec.prepare += "mkdir -p $root/volumes/%s";\n    mount += "%s/%s $root/volumes/%s zfs rw 0 0";' \
-                        "${_jail_params}" "${_volume}" "${ZJAIL_VOLUMES_DATASET}" "${_volume}" "${_volume}")"
+                # We use exec.prepare/exec.release rather than 'mount' directive to handle paths with spaces
+                _jail_params="$(printf '%s
+    exec.prepare += "mkdir -p \\"$root/volumes/%s\\"";
+    exec.prepare += "mount -t zfs \\"%s/%s\\" \\"$root/volumes/%s\\"";
+    exec.release += "umount  \\"%s/%s\\"";' \
+                        "${_jail_params}" \
+                        "${_volume}" \
+                        "${ZJAIL_VOLUMES_DATASET}" "${_volume}" "${_volume}" \
+                        "${ZJAIL_VOLUMES_DATASET}" "${_volume}")"
                 ;;
             w|WHEEL)
                 # Add subsequent users to the wheel group

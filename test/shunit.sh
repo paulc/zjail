@@ -399,17 +399,6 @@ testCreateInstanceAddUser() {
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
 }
 
-testCreateInstanceUpdate() {
-    # Should have been updated when created
-    ID1=$(./bin/zjail create_instance b1 -j persist)
-    ID2=$(./bin/zjail create_instance ${OS_RELEASE} -U -j persist)
-    V1=$(jexec $ID1 /bin/freebsd-version)
-    V2=$(jexec $ID2 /bin/freebsd-version)
-    assertEquals "${V1}" "${V2}"
-    ./bin/zjail destroy_instance $ID1 || fail DESTROY_INSTANCE
-    ./bin/zjail destroy_instance $ID2 || fail DESTROY_INSTANCE
-}
-
 testCreateInstanceVolume() {
     cat > "${ZJAIL}/config/test.conf" <<'EOM'
         exec.start = "/bin/sh /etc/rc";
@@ -417,14 +406,16 @@ testCreateInstanceVolume() {
         devfs_ruleset = 4;
         persist;
 EOM
+set -x
     UUID=$(uuidgen)
-    zfs create -o canmount=noauto "${ZJAIL}/volumes/${UUID}" || fail ZFS_CREATE
+    zfs create -o canmount=noauto "${ZROOT}${ZJAIL}/volumes/${UUID}" || fail ZFS_CREATE
     ID=$(./bin/zjail create_instance b1 -J "${ZJAIL}/config/test.conf" -v "${UUID}")
     V=$(jexec $ID ls /volumes)
-    assertEquals $ID $V
+    assertEquals "$UUID" "$V"
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
-    zfs destroy "${ZJAIL}/volumes/${UUID}"
+    zfs destroy "${ZROOT}${ZJAIL}/volumes/${UUID}"
     rm "${ZJAIL}/config/test.conf"
+set +x
 }
 
 testCreateInstanceVolumeCreate() {
@@ -437,11 +428,23 @@ EOM
     UUID=$(uuidgen)
     ID=$(./bin/zjail create_instance b1 -J "${ZJAIL}/config/test.conf" -V "${UUID}")
     V=$(jexec $ID ls /volumes)
-    assertEquals $ID $V
+    assertEquals "$UUID" "$V"
     ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
-    zfs destroy "${ZJAIL}/volumes/${UUID}"
+    zfs destroy "${ZROOT}${ZJAIL}/volumes/${UUID}"
     rm "${ZJAIL}/config/test.conf"
 }
+
+testCreateInstanceUpdate() {
+    # Should have been updated when created
+    ID1=$(./bin/zjail create_instance b1 -j persist)
+    ID2=$(./bin/zjail create_instance ${OS_RELEASE} -U -j persist)
+    V1=$(jexec $ID1 /bin/freebsd-version)
+    V2=$(jexec $ID2 /bin/freebsd-version)
+    assertEquals "${V1}" "${V2}"
+    ./bin/zjail destroy_instance $ID1 || fail DESTROY_INSTANCE
+    ./bin/zjail destroy_instance $ID2 || fail DESTROY_INSTANCE
+}
+
 
 testBuildNonPersistent() {
     cat > "${ZJAIL}/config/build-test" <<EOM
