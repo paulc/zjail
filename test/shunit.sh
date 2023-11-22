@@ -194,10 +194,24 @@ testSetHostname() {
 }
 
 testListInstanceDetails() {
-    ID=$(./bin/zjail create_instance b1 -j persist)
-    assertContains "$(./bin/zjail list_instance_details)" $ID
-    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    ID1=$(./bin/zjail create_instance b1 -j persist)
+    ID2=$(./bin/zjail create_instance b1 -j persist)
+    assertContains "$(./bin/zjail list_instance_details)" $ID1
+    assertContains "$(./bin/zjail list_instance_details)" $ID2
+    ./bin/zjail destroy_instance $ID1 || fail DESTROY_INSTANCE
+    ./bin/zjail destroy_instance $ID2 || fail DESTROY_INSTANCE
 }
+
+testListInstanceDetailsStopped() {
+    ID1=$(./bin/zjail create_instance b1 -j persist)
+    ID2=$(./bin/zjail create_instance b1 -j persist)
+    ./bin/zjail stop_instance $ID1 || fail STOP_INSTANCE
+    assertContains "$(./bin/zjail list_instance_details)" $ID1
+    assertContains "$(./bin/zjail list_instance_details)" $ID2
+    ./bin/zjail destroy_instance $ID1 || fail DESTROY_INSTANCE
+    ./bin/zjail destroy_instance $ID2 || fail DESTROY_INSTANCE
+}
+
 
 testListInstanceDetailsSingle() {
     ID=$(./bin/zjail create_instance b1 -j persist)
@@ -394,6 +408,39 @@ testCreateInstanceUpdate() {
     assertEquals "${V1}" "${V2}"
     ./bin/zjail destroy_instance $ID1 || fail DESTROY_INSTANCE
     ./bin/zjail destroy_instance $ID2 || fail DESTROY_INSTANCE
+}
+
+testCreateInstanceVolume() {
+    cat > "${ZJAIL}/config/test.conf" <<'EOM'
+        exec.start = "/bin/sh /etc/rc";
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+EOM
+    UUID=$(uuidgen)
+    zfs create -o canmount=noauto "${ZJAIL}/volumes/${UUID}" || fail ZFS_CREATE
+    ID=$(./bin/zjail create_instance b1 -J "${ZJAIL}/config/test.conf" -v "${UUID}")
+    V=$(jexec $ID ls /volumes)
+    assertEquals $ID $V
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    zfs destroy "${ZJAIL}/volumes/${UUID}"
+    rm "${ZJAIL}/config/test.conf"
+}
+
+testCreateInstanceVolumeCreate() {
+    cat > "${ZJAIL}/config/test.conf" <<'EOM'
+        exec.start = "/bin/sh /etc/rc";
+        mount.devfs;
+        devfs_ruleset = 4;
+        persist;
+EOM
+    UUID=$(uuidgen)
+    ID=$(./bin/zjail create_instance b1 -J "${ZJAIL}/config/test.conf" -V "${UUID}")
+    V=$(jexec $ID ls /volumes)
+    assertEquals $ID $V
+    ./bin/zjail destroy_instance $ID || fail DESTROY_INSTANCE
+    zfs destroy "${ZJAIL}/volumes/${UUID}"
+    rm "${ZJAIL}/config/test.conf"
 }
 
 testBuildNonPersistent() {
