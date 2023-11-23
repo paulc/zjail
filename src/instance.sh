@@ -3,7 +3,7 @@
 ### Instances
 
 list_instances() { #
-    /sbin/zfs list -H -r -o zjail:id "${ZJAIL_RUN_DATASET}" | sed -e '/^-/d'
+    /sbin/zfs list -H -r -o zjail:id "${ZJAIL_RUN_DATASET}" | sed -e 1d
 }
 
 list_instance_details() { # [instance_id]

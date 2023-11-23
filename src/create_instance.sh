@@ -304,9 +304,9 @@ create_instance() { # <base|release> [options]
                 fi
                 # We use exec.prepare/exec.release rather than 'mount' directive to handle paths with spaces
                 _jail_params="$(printf '%s
-    exec.prepare += "mkdir -p \\"$root/volumes/%s\\"";
-    exec.prepare += "mount -t zfs \\"%s/%s\\" \\"$root/volumes/%s\\"";
-    exec.release += "umount  \\"%s/%s\\"";' \
+    exec.prepare += "/bin/mkdir -p \\"$root/volumes/%s\\"";
+    exec.prepare += "/sbin/mount -t zfs \\"%s/%s\\" \\"$root/volumes/%s\\"";
+    exec.release += "/sbin/umount  \\"%s/%s\\"";' \
                         "${_jail_params}" \
                         "${_volume}" \
                         "${ZJAIL_VOLUMES_DATASET}" "${_volume}" "${_volume}" \
@@ -327,9 +327,9 @@ create_instance() { # <base|release> [options]
                 fi
                 # We use exec.prepare/exec.release rather than 'mount' directive to handle paths with spaces
                 _jail_params="$(printf '%s
-    exec.prepare += "mkdir -p \\"$root/volumes/%s\\"";
-    exec.prepare += "mount -t zfs \\"%s/%s\\" \\"$root/volumes/%s\\"";
-    exec.release += "umount  \\"%s/%s\\"";' \
+    exec.prepare += "/bin/mkdir -p \\"$root/volumes/%s\\"";
+    exec.prepare += "/sbin/mount -t zfs \\"%s/%s\\" \\"$root/volumes/%s\\"";
+    exec.release += "/sbin/umount  \\"%s/%s\\"";' \
                         "${_jail_params}" \
                         "${_volume}" \
                         "${ZJAIL_VOLUMES_DATASET}" "${_volume}" "${_volume}" \
